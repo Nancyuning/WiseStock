@@ -3,8 +3,7 @@
 一個用 Python + Streamlit 打造的台股投資追蹤平台，支援多帳號登入，
 每個帳號各自管理自己的交易紀錄與持倉，並提供績效分析、市場籌碼雷達與技術分析工具。
 
-<!-- 部署到 Streamlit Community Cloud 後，把下面這行的網址換成實際的 Demo 連結 -->
-**🔗 線上 Demo：** DEMO_URL（點「以訪客身分瀏覽 Demo」即可，不需註冊）
+**🔗 線上 Demo：** <https://wisestock-demo.streamlit.app>（點「以訪客身分瀏覽 Demo」即可，不需註冊；閒置後第一次開啟需等待約 30 秒喚醒）
 
 | 監控中心 | 市場雷達 |
 |---|---|

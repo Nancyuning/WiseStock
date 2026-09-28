@@ -1,0 +1,11 @@
+# 執行 app 所需的直接依賴。
+# 各套件的 transitive dependencies 交給 pip 自動解析，不手動列出。
+streamlit==1.57.0
+streamlit-option-menu==0.4.0
+pandas==3.0.3
+numpy==2.4.6
+plotly==6.7.0
+yfinance==1.3.0
+requests==2.34.2
+bcrypt==5.0.0
+python-dotenv==1.2.2

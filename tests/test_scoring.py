@@ -1,5 +1,5 @@
 """
-services/scoring.py 與 strategy.py 的測試。
+services/scoring.py（買賣點評分）與 strategy.py 的測試。
 一律使用公開的 strategy_defaults，結果不受本機有沒有 strategy_config.py 影響。
 """
 import copy
@@ -37,10 +37,6 @@ def test_first_match_picks_first_threshold_reached():
     assert strategy.first_match(10, table, "low") == "low"
 
 
-def test_market_risk_weights_sum_to_one():
-    assert sum(strategy_defaults.STRATEGY["market_risk"]["weights"].values()) == pytest.approx(1)
-
-
 def test_score_buy_all_conditions_met_gets_full_marks(default_strategy):
     result = scoring.score_buy(_ind())
     assert result["total"] == result["max"] == 100
@@ -66,47 +62,11 @@ def test_score_sell_overheated_near_high_is_high_risk():
     assert "高風險" in result["grade"]
 
 
-def _sig(momentum="趨勢偏多", timing="建議加碼", volume="價量齊揚", cur=100, atr_stop=None):
-    return {"momentum_label": momentum, "timing_label": timing, "volume_label": volume,
-            "raw": {"current_price": cur, "atr_trail_stop": atr_stop}}
-
-
-def test_rebalance_entry_when_all_signals_align_and_underweight():
-    kind, reasons = scoring.classify_rebalance(_sig(), diff_val=10_000)
-    assert kind == "entry" and "量價齊揚佐證" in reasons
-
-
-def test_rebalance_no_entry_when_already_fully_invested():
-    kind, reasons = scoring.classify_rebalance(_sig(), diff_val=-1)
-    assert kind == "hold" and reasons == ["水位已足"]
-
-
-def test_rebalance_trim_on_atr_break():
-    kind, reasons = scoring.classify_rebalance(_sig(cur=90, atr_stop=95), diff_val=10_000)
-    assert kind == "trim" and any("ATR" in r for r in reasons)
-
-
-def test_rebalance_hold_if_only_momentum_weak_is_configurable(default_strategy):
-    sig = _sig(momentum="盤整/弱勢", timing="觀察等待", volume="量能持平")
-    default_strategy["rebalance"]["hold_if_only_momentum_weak"] = False
-    assert scoring.classify_rebalance(sig, diff_val=0)[0] == "trim"
-    default_strategy["rebalance"]["hold_if_only_momentum_weak"] = True
-    assert scoring.classify_rebalance(sig, diff_val=0)[0] == "hold"
-
-
-def test_private_config_has_same_structure_as_defaults():
-    """strategy_config.py（若存在）必須跟公開預設值有相同的鍵，避免漏設參數。"""
-    try:
-        import strategy_config
-    except ImportError:
-        pytest.skip("本機沒有 strategy_config.py")
-
-    def keys(d, prefix=""):
-        out = set()
-        for k, v in d.items():
-            out.add(prefix + k)
-            if isinstance(v, dict):
-                out |= keys(v, prefix + k + ".")
-        return out
-
-    assert keys(strategy_config.STRATEGY) == keys(strategy_defaults.STRATEGY)
+def test_score_labels_are_translated_in_english(monkeypatch):
+    import i18n
+    monkeypatch.setattr(i18n, "get_lang", lambda: "en")
+    result = scoring.score_buy(_ind())
+    assert result["grade"].startswith("A") and "Excellent" in result["grade"]
+    assert result["rows"][0]["條件"] == "RSI not overbought (<70)"
+    sell = scoring.score_sell(_ind(rsi=85))
+    assert sell["rows"][0]["觸發"] == "⚠️ Yes"

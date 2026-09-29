@@ -18,6 +18,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from stock_data import _calc_kd, _calc_obv
+from i18n import t
 
 DARK_BG  = "#131722"
 GRID_COL = "#2a2e39"
@@ -47,6 +48,21 @@ def _fetch_data(ticker_fmt: str, days: int):
         return None
 
 
+INDICATOR_HELP = """
+**KD（N=9）**
+- 🔴 K>80 超買紅點；🟢 K<20 超賣綠點
+- K 上穿 D = 黃金交叉；K 下穿 D = 死亡交叉
+
+**RSI（5日 / 10日）**
+- 橘色 RSI(5)：反應快，短線訊號靈敏
+- 紫色 RSI(10)：較平滑，中線趨勢
+- 兩線交叉可作為買賣參考
+
+**OBV 能量潮**
+- OBV 創新高 + 股價新高 = 健康；背離 = 警示
+"""
+
+
 def _calc_rsi(close: pd.Series, period: int) -> pd.Series:
     delta    = close.diff()
     gain     = delta.clip(lower=0)
@@ -58,38 +74,38 @@ def _calc_rsi(close: pd.Series, period: int) -> pd.Series:
 
 
 def render_stock_chart_section():
-    st.header("📊 技術圖表分析")
-    st.caption("K線 · 成交量 · KD(9) · RSI(5/10) · OBV｜滑鼠移動同步顯示當天數值")
+    st.header(t("📊 技術圖表分析"))
+    st.caption(t("K線 · 成交量 · KD(9) · RSI(5/10) · OBV｜滑鼠移動同步顯示當天數值"))
 
     c1, c2, c3 = st.columns([3, 2, 1])
     with c1:
         raw_ticker = st.text_input(
-            "股票代號（例：2330、00631L、0050）",
-            placeholder="輸入代號後按 Enter",
+            t("股票代號（例：2330、00631L、0050）"),
+            placeholder=t("輸入代號後按 Enter"),
             key="chart_ticker_input",
         )
     with c2:
         days_opts  = {"60 天": 60, "90 天": 90, "120 天": 120, "180 天": 180}
-        days_label = st.selectbox("查詢區間", list(days_opts.keys()),
-                                  index=1, key="chart_days_select")
+        days_label = st.selectbox(t("查詢區間"), list(days_opts.keys()),
+                                  index=1, key="chart_days_select", format_func=t)
         days = days_opts[days_label]
     with c3:
         st.write(""); st.write("")
-        st.button("🔍 查詢", type="primary", width="stretch",
+        st.button(t("🔍 查詢"), type="primary", width="stretch",
                   key="chart_query_btn")
 
     if not raw_ticker:
-        st.info("👆 輸入股票代號開始分析")
+        st.info(t("👆 輸入股票代號開始分析"))
         return
 
     ticker_fmt  = _format_tw(raw_ticker)
     ticker_show = raw_ticker.strip().upper()
 
-    with st.spinner(f"下載 {ticker_show} 資料中..."):
+    with st.spinner(t("下載 {ticker} 資料中...", ticker=ticker_show)):
         df_full = _fetch_data(ticker_fmt, days)
 
     if df_full is None or df_full.empty:
-        st.error(f"❌ 無法取得 {ticker_show} 的資料")
+        st.error(t("❌ 無法取得 {ticker} 的資料", ticker=ticker_show))
         return
 
     # 在完整資料上計算指標（預熱），再截取
@@ -142,7 +158,7 @@ def render_stock_chart_section():
     def _clr_kd(v):  return "#ef5350" if v >= 80 else ("#26a69a" if v <= 20 else TEXT_COL)
 
     mc = st.columns(6)
-    mc[0].metric("現價", f"{cur:.2f}",
+    mc[0].metric(t("現價"), f"{cur:.2f}",
                  delta=f"EMA20 {cur_ema20:.2f}",
                  delta_color="normal" if cur >= cur_ema20 else "inverse")
     for i, (lbl, val, fn) in enumerate([
@@ -186,12 +202,12 @@ def render_stock_chart_section():
         low=df["Low"],   close=df["Close"],
         increasing_line_color="#ef5350", decreasing_line_color="#26a69a",
         increasing_fillcolor="#ef5350",  decreasing_fillcolor="#26a69a",
-        name="K線", showlegend=False,
+        name=t("K線"), showlegend=False,
         customdata=cd_candle,
         hovertemplate=(
             "<b>%{x}</b><br>"
-            "開:%{customdata[0]:.2f}  高:%{customdata[1]:.2f}<br>"
-            "低:%{customdata[2]:.2f}  收:%{customdata[3]:.2f}<br>"
+            + t("開") + ":%{customdata[0]:.2f}  " + t("高") + ":%{customdata[1]:.2f}<br>"
+            + t("低") + ":%{customdata[2]:.2f}  " + t("收") + ":%{customdata[3]:.2f}<br>"
             "EMA20:%{customdata[4]:.2f}  EMA60:%{customdata[5]:.2f}"
             "<extra></extra>"
         ),
@@ -218,8 +234,8 @@ def render_stock_chart_section():
     fig.add_trace(go.Bar(
         x=date_strs, y=vol_d.values,
         marker_color=vol_colors, opacity=0.60,
-        name="成交量",
-        hovertemplate="量:%{y:,.0f}<extra></extra>",
+        name=t("成交量"),
+        hovertemplate=t("量") + ":%{y:,.0f}<extra></extra>",
     ), row=2, col=1)
     fig.add_trace(go.Scatter(
         x=date_strs, y=vma5_d.values, name="Vol MA5",
@@ -333,18 +349,18 @@ def render_stock_chart_section():
     # 靜態初始 annotation（最新值），JS 會 overwrite
     ann_rows = [
         (0.995, f"<b>{ticker_show}</b>  "
-                f"收:<b>{cur:.2f}</b>  "
+                f"{t('收')}:<b>{cur:.2f}</b>  "
                 f"<span style='color:#e91e8c'>EMA20:{cur_ema20:.2f}</span>  "
                 f"<span style='color:#4fc3f7'>EMA60:{cur_ema60:.2f}</span>"),
-        (0.595, f"量: {float(vol_d.iloc[-1]):,.0f}  "
+        (0.595, f"{t('量')}: {float(vol_d.iloc[-1]):,.0f}  "
                 f"MA5:{float(vma5_d.dropna().iloc[-1]):,.0f}  "
                 f"MA10:{float(vma10_d.dropna().iloc[-1]):,.0f}"),
         (0.450, f"<b>KD(9)</b>  "
                 f"<span style='color:#FFD700'>K:{cur_k:.1f}</span>  "
                 f"<span style='color:#f48fb1'>D:{cur_d:.1f}</span>"),
         (0.295, f"<b>RSI</b>  "
-                f"<span style='color:#ff9800'>5日:{cur_rsi5:.1f}</span>  "
-                f"<span style='color:#7b61ff'>10日:{cur_rsi10:.1f}</span>"),
+                f"<span style='color:#ff9800'>{t('5日')}:{cur_rsi5:.1f}</span>  "
+                f"<span style='color:#7b61ff'>{t('10日')}:{cur_rsi10:.1f}</span>"),
         (0.148, f"<b>OBV</b>  {cur_obv:,.0f}"),
     ]
 
@@ -422,23 +438,11 @@ def render_stock_chart_section():
     st.plotly_chart(fig, width="stretch", theme=None,
                     key="main_chart")
 
-    st.caption(
+    st.caption(t(
         "🔴 K>80 超買紅點  🟢 K<20 超賣綠點  ｜  "
         "RSI 橘線=5日、紫線=10日  ｜  "
         "X 軸已過濾週末/假日"
-    )
+    ))
 
-    with st.expander("📖 指標說明", expanded=False):
-        st.markdown("""
-**KD（N=9）**
-- 🔴 K>80 超買紅點；🟢 K<20 超賣綠點
-- K 上穿 D = 黃金交叉；K 下穿 D = 死亡交叉
-
-**RSI（5日 / 10日）**
-- 橘色 RSI(5)：反應快，短線訊號靈敏
-- 紫色 RSI(10)：較平滑，中線趨勢
-- 兩線交叉可作為買賣參考
-
-**OBV 能量潮**
-- OBV 創新高 + 股價新高 = 健康；背離 = 警示
-        """)
+    with st.expander(t("📖 指標說明"), expanded=False):
+        st.markdown(t(INDICATOR_HELP))

@@ -378,6 +378,219 @@ button{cursor:pointer}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 'use strict';
+/* ═══════════════════════════════════════════════
+   I18N — Python 端注入 window.LANG（'en' | 'zh'），未注入時維持中文
+   T(s, vars)  介面文字；vars 會替換 {name} 佔位
+   TS(name)    類股 / 主題類型名稱；SECTOR_EN 必須與 locales/en_sectors.py 一致
+               （tests/test_radar_i18n.py 會檢查）
+═══════════════════════════════════════════════ */
+const LANG = (typeof window.LANG !== 'undefined') ? window.LANG : 'zh';
+const EN = {
+  "類股漲跌": "Sector Performance",
+  "按漲跌幅排序　點擊查看成分股": "Sorted by % change · click a sector to see its stocks",
+  "載入中...": "Loading...",
+  "載入中…": "Loading…",
+  "✕ 關閉": "✕ Close",
+  "代號": "Code",
+  "名稱": "Name",
+  "收盤": "Close",
+  "漲跌幅": "% Chg",
+  "成交量（張）": "Volume (lots)",
+  "外資（張）": "Foreign (lots)",
+  "深入分析": "Details",
+  "資料日期：—": "Data date: —",
+  "今日漲停家數": "Limit-up stocks today",
+  "含一字板": "Incl. locked limit-up",
+  "一字板（鎖死）": "Locked limit-up",
+  "無法買進": "Cannot be bought",
+  "最多類型": "Top theme",
+  "涵蓋主題數": "Themes covered",
+  "種": "themes",
+  "主題類型分布": "Theme distribution",
+  "佔比甜甜圈": "Share by theme",
+  "卡片": "Cards",
+  "表格": "Table",
+  "今日外資 + 投信合計買超前 20": "Top 20 net buys today (foreign + investment trust)",
+  "今日外資 + 投信合計賣超前 20": "Top 20 net sells today (foreign + investment trust)",
+  "漲跌": "Chg",
+  "外資(張)": "Foreign (lots)",
+  "投信(張)": "Inv. trust (lots)",
+  "自營(張)": "Dealers (lots)",
+  "類股熱點": "Sector Heatmap",
+  "無類股資料": "No sector data",
+  "量能": "Volume",
+  "無個股資料": "No stock data",
+  "⚠️ 後端未傳 sector 欄位，顯示全市場": "⚠️ Backend sent no sector field; showing the whole market",
+  "排序：": "Sort:",
+  "成交量": "Volume",
+  "外資買超": "Foreign net buy",
+  "共 {n} 檔（顯示前 50）": "{n} stocks (showing top 50)",
+  "深挖 →": "Details →",
+  "收盤價": "Close",
+  "外資買賣超": "Foreign net",
+  "投信買賣超": "Inv. trust net",
+  "自營買賣超": "Dealers net",
+  "三大法人合計": "Institutional total",
+  "近期法人走勢（{n} 日）": "Recent institutional flows ({n} days)",
+  "資料來源：三大法人歷史（FinMind）": "Source: institutional investors history (FinMind)",
+  "{v} 張": "{v} lots",
+  "{n} 檔": "{n} stocks",
+  "全部": "All",
+  "⚡一字板": "⚡Locked",
+  "連{n}日": "{n}-day streak",
+  "量 {v} 張": "Vol {v} lots",
+  "主題類型": "Theme",
+  "漲幅": "Gain",
+  "一字板": "Locked",
+  "連漲停": "Streak",
+  "⚡ 是": "⚡ Yes",
+  "首次": "First",
+  "無法人資料": "No institutional data",
+  "「{code}」查無資料，請確認代號後重試": "No data for “{code}” — please check the code and try again",
+  "📈 三大法人今日均買超 {code}": "📈 All three institutional groups were net buyers of {code} today",
+  "⚠️ 三大法人今日均賣超 {code}": "⚠️ All three institutional groups were net sellers of {code} today",
+  "📊 三大法人買賣方向不一致": "📊 Institutional groups disagree on direction",
+  "外資買賣超（張）": "Foreign net (lots)",
+  "投信買賣超（張）": "Inv. trust net (lots)",
+  "自營商買賣超（張）": "Dealers net (lots)",
+  "近 20 日三大法人買賣超走勢（張）": "Institutional net buying, last 20 days (lots)",
+  "資料來源：歷史法人（最後一根為查詢日）": "Source: institutional history (last bar = query date)",
+  "今日": "Today",
+  "⚠️ 無歷史資料（需 FinMind Token）；僅顯示查詢日": "⚠️ No history (FinMind token required); showing the query date only",
+  "⏳ 查詢 {code} 大戶資料中...": "⏳ Fetching major-holder data for {code}...",
+  "❌ 查詢失敗：{err}": "❌ Query failed: {err}",
+  "❌ 連線失敗": "❌ Connection failed",
+  "請確認 proxy server 是否正常運作": "Please check that the proxy server is running",
+  "渲染錯誤：{msg}": "Render error: {msg}",
+  "集保 API 未回傳資料": "TDCC API returned no data",
+  "「{code}」無大戶籌碼資料": "No major-holder data for “{code}”",
+  "🐋 大戶持股增加 +{v}%，籌碼集中趨勢": "🐋 Major holders up +{v}% — ownership concentrating",
+  "⚠️ 大戶持股減少 {v}%，籌碼鬆動": "⚠️ Major holders down {v}% — ownership dispersing",
+  "➡️ 大戶持股變化不大（{v}%）": "➡️ Little change among major holders ({v}%)",
+  "大戶≥{w}張 ／ 散戶＜{r}張": "Major ≥{w} lots / Retail <{r} lots",
+  "大戶持股（≥{w}張）": "Major holders (≥{w} lots)",
+  "散戶持股（＜{r}張）": "Retail holders (<{r} lots)",
+  "{n} 人": "{n} holders",
+  "大戶人數": "Major holders",
+  "總股東人數": "Total shareholders",
+  "張數比例": "Share of lots",
+  "持股分布": "Holding distribution",
+  "歷史大戶 vs 散戶持股趨勢（每週）": "Major vs retail holdings over time (weekly)",
+  "資料來源：集保 TDCC（每週四更新）": "Source: TDCC (updated every Thursday)",
+  "歷史記錄（近期）": "Recent history",
+  "日期": "Date",
+  "大戶持股(%)": "Major (%)",
+  "大戶增減(%)": "Major chg (%)",
+  "散戶持股(%)": "Retail (%)",
+  "內部人持股(%)": "Insiders (%)",
+  "大戶(≥{w}張)": "Major (≥{w} lots)",
+  "中戶": "Mid-size",
+  "散戶(<{r}張)": "Retail (<{r} lots)",
+  "大戶持股%（≥{w}張）": "Major holders % (≥{w} lots)",
+  "散戶持股%（＜{r}張）": "Retail holders % (<{r} lots)",
+  "大戶增減: {v}%": "Major chg: {v}%",
+  "散戶增減: {v}%": "Retail chg: {v}%",
+  "大戶（≥{w}張）": "Major (≥{w} lots)",
+  "散戶（＜{r}張）": "Retail (<{r} lots)"
+};
+const SECTOR_EN = /*SECTOR_EN_START*/{
+  "水泥工業": "Cement",
+  "食品工業": "Food",
+  "塑膠工業": "Plastics",
+  "紡織纖維": "Textiles",
+  "電機機械": "Electric Machinery",
+  "電器電纜": "Electrical & Cable",
+  "化學工業": "Chemicals",
+  "化學生技醫療": "Chemical, Biotech & Medical",
+  "生技醫療業": "Biotech & Medical Care",
+  "玻璃陶瓷": "Glass & Ceramics",
+  "造紙工業": "Paper & Pulp",
+  "鋼鐵工業": "Iron & Steel",
+  "橡膠工業": "Rubber",
+  "汽車工業": "Automobiles",
+  "電子工業": "Electronics",
+  "半導體業": "Semiconductors",
+  "電腦及週邊設備業": "Computers & Peripherals",
+  "光電業": "Optoelectronics",
+  "通信網路業": "Communications & Internet",
+  "電子零組件業": "Electronic Components",
+  "電子通路業": "Electronics Distribution",
+  "資訊服務業": "Information Services",
+  "其他電子業": "Other Electronics",
+  "其他電子類": "Other Electronics",
+  "建材營造": "Building Materials & Construction",
+  "航運業": "Shipping & Transportation",
+  "觀光事業": "Tourism",
+  "觀光餐旅": "Tourism & Hospitality",
+  "金融保險": "Finance & Insurance",
+  "金融業": "Finance",
+  "貿易百貨": "Trading & Consumer Goods",
+  "油電燃氣業": "Oil, Gas & Electricity",
+  "綠能環保": "Green Energy & Environment",
+  "綠能環保類": "Green Energy & Environment",
+  "數位雲端": "Digital & Cloud Services",
+  "數位雲端類": "Digital & Cloud Services",
+  "運動休閒": "Sports & Leisure",
+  "運動休閒類": "Sports & Leisure",
+  "居家生活": "Home Living",
+  "居家生活類": "Home Living",
+  "文化創意業": "Cultural & Creative",
+  "農業科技": "Agricultural Technology",
+  "農業科技業": "Agricultural Technology",
+  "電子商務業": "E-commerce",
+  "存託憑證": "Depositary Receipts",
+  "受益證券": "Beneficiary Securities",
+  "創新板股票": "Taiwan Innovation Board",
+  "創新版股票": "Taiwan Innovation Board",
+  "上櫃ETF": "TPEx ETFs",
+  "上櫃指數股票型基金(ETF)": "TPEx ETFs",
+  "指數投資證券(ETN)": "ETNs",
+  "大盤": "Market",
+  "所有證券": "All Securities",
+  "其他": "Other",
+  "半導體": "Semiconductors",
+  "AI/伺服器": "AI / Servers",
+  "電動車/電池": "EV / Batteries",
+  "生技醫療": "Biotech & Medical",
+  "金融": "Financials",
+  "航太/航運": "Aerospace / Shipping",
+  "傳產/原物料": "Traditional / Materials",
+  "光電/面板": "Optoelectronics / Panels",
+  "其他電子": "Other Electronics",
+  "AI": "AI",
+  "伺服器": "Servers",
+  "電動車": "EV",
+  "電池": "Batteries",
+  "航太": "Aerospace",
+  "航運": "Shipping",
+  "傳產": "Traditional",
+  "原物料": "Materials",
+  "光電": "Optoelectronics",
+  "面板": "Panels",
+  "電腦周邊": "Computers & Peripherals",
+  "通信網路": "Communications & Internet",
+  "電子零組件": "Electronic Components",
+  "鋼鐵": "Iron & Steel",
+  "塑化": "Plastics & Chemicals",
+  "觀光": "Tourism",
+  "食品": "Food"
+}/*SECTOR_EN_END*/;
+function T(s, vars) {
+  let out = (LANG === 'en' && EN[s]) || s;
+  if(vars) out = out.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+  return out;
+}
+function TS(name) { return (LANG === 'en' && SECTOR_EN[name]) || name; }
+function translateStatic(root) {
+  if(LANG !== 'en' || !root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while(walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    const key = n.nodeValue.trim();
+    if(key && EN[key]) n.nodeValue = n.nodeValue.replace(key, EN[key]);
+  });
+}
 
 /* ═══════════════════════════════════════════════
    DATA BRIDGE
@@ -468,7 +681,7 @@ function buildSecGrid() {
   const secs = [...(DATA.sectors || [])].filter(s => s.vol > 0 || Math.abs(s.pct) > 0)
                                          .sort((a,b) => (b.pct||0) - (a.pct||0));  // 按漲跌幅排序
   const el   = document.getElementById('secTreemap');
-  if(!secs.length) { el.innerHTML='<div class="empty">無類股資料</div>'; return; }
+  if(!secs.length) { el.innerHTML=`<div class="empty">${T('無類股資料')}</div>`; return; }
 
   // 計算最大成交量用於繪製條狀圖
   const maxVol = Math.max(...secs.map(s => s.vol || 0));
@@ -506,7 +719,7 @@ function buildSecGrid() {
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
               <div style="font-size:15px;font-weight:600;color:var(--text1);flex:1;
                           white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                ${s.name}
+                ${TS(s.name)}
               </div>
               <div style="font-size:18px;font-weight:700;font-family:var(--mono);
                           color:${textColor};margin-left:8px;white-space:nowrap">
@@ -516,7 +729,7 @@ function buildSecGrid() {
             
             <!-- 成交量條狀圖 -->
             <div style="display:flex;align-items:center;gap:6px">
-              <div style="font-size:12px;color:var(--text3);min-width:40px">量能</div>
+              <div style="font-size:12px;color:var(--text3);min-width:40px">${T('量能')}</div>
               <div style="flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
                 <div style="width:${volPct}%;height:100%;background:${textColor};
                             border-radius:3px;transition:width .4s ease"></div>
@@ -684,25 +897,25 @@ function drillSector(sectorName, pct) {
 
   const sign = pct >= 0 ? '+' : '';
   const pctColor = pct > 0 ? 'var(--up)' : pct < 0 ? 'var(--dn)' : 'var(--text3)';
-  document.getElementById('drillTitle').textContent = sectorName;
+  document.getElementById('drillTitle').textContent = TS(sectorName);
   document.getElementById('drillPct').innerHTML = `<span style="color:${pctColor}">${sign}${pct.toFixed(2)}%</span>`;
 
   const detail = DATA.inst_detail || {};
   const tbody = document.getElementById('drillTbody');
   
   if(filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">無個股資料</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">${T('無個股資料')}</td></tr>`;
   } else {
-    const note = !hasReal ? `<tr><td colspan="7" style="text-align:center;color:var(--gold);padding:8px;font-size:13px">⚠️ 後端未傳 sector 欄位，顯示全市場</td></tr>` : '';
+    const note = !hasReal ? `<tr><td colspan="7" style="text-align:center;color:var(--gold);padding:8px;font-size:13px">${T('⚠️ 後端未傳 sector 欄位，顯示全市場')}</td></tr>` : '';
     
     // 排序按鈕組（插入表格前）
     const sortBtns = `
       <div style="display:flex;gap:6px;padding:10px 18px;background:var(--bg2);border-bottom:1px solid var(--border);align-items:center">
-        <span style="font-size:13px;color:var(--text3);margin-right:6px">排序：</span>
-        <button class="th-btn ${_drillSortBy==='chg'?'on':''}" onclick="changeDrillSort('chg','${sectorName.replace(/'/g,"\\'")}',${pct})">漲跌幅</button>
-        <button class="th-btn ${_drillSortBy==='vol'?'on':''}" onclick="changeDrillSort('vol','${sectorName.replace(/'/g,"\\'")}',${pct})">成交量</button>
-        <button class="th-btn ${_drillSortBy==='f'?'on':''}" onclick="changeDrillSort('f','${sectorName.replace(/'/g,"\\'")}',${pct})">外資買超</button>
-        <span style="font-size:13px;color:var(--text3);margin-left:auto">共 ${filtered.length} 檔（顯示前 50）</span>
+        <span style="font-size:13px;color:var(--text3);margin-right:6px">${T('排序：')}</span>
+        <button class="th-btn ${_drillSortBy==='chg'?'on':''}" onclick="changeDrillSort('chg','${sectorName.replace(/'/g,"\\'")}',${pct})">${T('漲跌幅')}</button>
+        <button class="th-btn ${_drillSortBy==='vol'?'on':''}" onclick="changeDrillSort('vol','${sectorName.replace(/'/g,"\\'")}',${pct})">${T('成交量')}</button>
+        <button class="th-btn ${_drillSortBy==='f'?'on':''}" onclick="changeDrillSort('f','${sectorName.replace(/'/g,"\\'")}',${pct})">${T('外資買超')}</button>
+        <span style="font-size:13px;color:var(--text3);margin-left:auto">${T('共 {n} 檔（顯示前 50）', {n: filtered.length})}</span>
       </div>`;
     
     // 插入排序按鈕（在 table 外層）
@@ -735,7 +948,7 @@ function drillSector(sectorName, pct) {
         <td class="mono" style="text-align:right;color:var(--text2)">${s.vol||'—'}</td>
         <td class="mono" style="text-align:right;color:${fPos?'var(--up)':fNeg?'var(--dn)':'var(--text3)'};font-weight:${fPos||fNeg?'700':'400'}">${fVal}</td>
         <td style="text-align:right">
-          <button class="btn-ghost" style="padding:5px 12px;font-size:14px" onclick="goToStockAnalysis('${s.code}')">深挖 →</button>
+          <button class="btn-ghost" style="padding:5px 12px;font-size:14px" onclick="goToStockAnalysis('${s.code}')">${T('深挖 →')}</button>
         </td>
       </tr>`;
     }).join('');
@@ -811,19 +1024,19 @@ function goToStockAnalysis(code) {
         <span style="font-size:17px;font-weight:600">${name}</span>
         <span class="${chgCls}" style="font-size:15px;font-family:var(--mono);font-weight:700">${chgStr}</span>
       </div>
-      <button class="btn-ghost" style="padding:5px 14px;font-size:14px" onclick="closeStockDetail()">✕ 關閉</button>
+      <button class="btn-ghost" style="padding:5px 14px;font-size:14px" onclick="closeStockDetail()">${T('✕ 關閉')}</button>
     </div>
     <div style="padding:16px 18px">
       <div class="metrics" style="margin-bottom:16px">
-        <div class="mc"><div class="ml">收盤價</div><div class="mv">${price}</div><div class="ms ${chgCls}">${chgStr}</div></div>
-        <div class="mc"><div class="ml">成交量（張）</div><div class="mv" style="font-size:22px">${vol}</div></div>
-        <div class="mc"><div class="ml">外資買賣超</div><div class="mv" style="font-size:22px;color:${fPos?'var(--up)':fNeg?'var(--dn)':'var(--text2)'}">${fVal}</div></div>
-        <div class="mc"><div class="ml">投信買賣超</div><div class="mv" style="font-size:22px;color:${tPos?'var(--up)':tNeg?'var(--dn)':'var(--text2)'}">${tVal}</div></div>
-        <div class="mc"><div class="ml">自營買賣超</div><div class="mv" style="font-size:22px">${dVal}</div></div>
-        <div class="mc"><div class="ml">三大法人合計</div><div class="mv" style="font-size:22px">${total}</div></div>
+        <div class="mc"><div class="ml">${T('收盤價')}</div><div class="mv">${price}</div><div class="ms ${chgCls}">${chgStr}</div></div>
+        <div class="mc"><div class="ml">${T('成交量（張）')}</div><div class="mv" style="font-size:22px">${vol}</div></div>
+        <div class="mc"><div class="ml">${T('外資買賣超')}</div><div class="mv" style="font-size:22px;color:${fPos?'var(--up)':fNeg?'var(--dn)':'var(--text2)'}">${fVal}</div></div>
+        <div class="mc"><div class="ml">${T('投信買賣超')}</div><div class="mv" style="font-size:22px;color:${tPos?'var(--up)':tNeg?'var(--dn)':'var(--text2)'}">${tVal}</div></div>
+        <div class="mc"><div class="ml">${T('自營買賣超')}</div><div class="mv" style="font-size:22px">${dVal}</div></div>
+        <div class="mc"><div class="ml">${T('三大法人合計')}</div><div class="mv" style="font-size:22px">${total}</div></div>
       </div>
       ${hasHist ? `
-      <div class="st">近期法人走勢（${hist.length} 日）</div>
+      <div class="st">${T('近期法人走勢（{n} 日）', {n: hist.length})}</div>
       <div class="cb" style="margin-bottom:16px">
         <div class="cw h200"><canvas id="stockDetailChart"></canvas></div>
         <div id="stockDetailNote" style="font-size:12px;color:var(--text3);margin-top:6px;text-align:right"></div>
@@ -850,21 +1063,21 @@ function _buildStockDetailChart(hist) {
   const dataF  = hist.map(h => h.f || 0);
   const dataT  = hist.map(h => h.t || 0);
   const noteEl = document.getElementById('stockDetailNote');
-  if(noteEl) noteEl.textContent = '資料來源：三大法人歷史（FinMind）';
+  if(noteEl) noteEl.textContent = T('資料來源：三大法人歷史（FinMind）');
   const isDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
   const tc = () => isDark ? '#c4c9d4' : '#374151';
   const gc = () => isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
   _stockDetailChart = new Chart(el, {
     type:'bar',
     data:{ labels, datasets:[
-      { label:'外資(張)', data:dataF, backgroundColor:dataF.map(v=>v>=0?'rgba(61,126,255,.75)':'rgba(61,126,255,.35)'), borderRadius:3 },
-      { label:'投信(張)', data:dataT, backgroundColor:dataT.map(v=>v>=0?'rgba(232,58,58,.75)':'rgba(34,196,152,.75)'), borderRadius:3 },
+      { label:T('外資(張)'), data:dataF, backgroundColor:dataF.map(v=>v>=0?'rgba(61,126,255,.75)':'rgba(61,126,255,.35)'), borderRadius:3 },
+      { label:T('投信(張)'), data:dataT, backgroundColor:dataT.map(v=>v>=0?'rgba(232,58,58,.75)':'rgba(34,196,152,.75)'), borderRadius:3 },
     ]},
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{
         legend:{display:true,position:'top',labels:{boxWidth:13,font:{size:13},color:tc(),padding:12}},
-        tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString()} 張`}},
+        tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${T('{v} 張', {v: c.parsed.y.toLocaleString()})}`}},
       },
       scales:{
         x:{ticks:{color:tc(),font:{size:12},autoSkip:true,maxTicksLimit:10},grid:{display:false},border:{display:false}},
@@ -890,8 +1103,8 @@ function initLimitup() {
   const topType = TKEYS[0] || '—';
   document.getElementById('lu-total').textContent = LU.length;
   document.getElementById('lu-locked').textContent = locked;
-  document.getElementById('lu-toptype').textContent = topType;
-  document.getElementById('lu-toptype-cnt').textContent = (TCOUNT[topType]||0)+' 檔';
+  document.getElementById('lu-toptype').textContent = TS(topType);
+  document.getElementById('lu-toptype-cnt').textContent = T('{n} 檔', {n: TCOUNT[topType]||0});
   document.getElementById('lu-themes').textContent = TKEYS.length;
 
   buildLuCharts();
@@ -908,14 +1121,14 @@ function buildLuCharts() {
 
   luBarChart = new Chart(elBar, {
     type:'bar',
-    data:{labels:TKEYS, datasets:[{
+    data:{labels:TKEYS.map(TS), datasets:[{
       data:TKEYS.map(t=>TCOUNT[t]),
       backgroundColor:colors.map(c=>c+'cc'), borderColor:colors, borderWidth:1,
       borderRadius:4, borderSkipped:false,
     }]},
     options:{
       responsive:true, maintainAspectRatio:false, indexAxis:'y',
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.parsed.x} 檔`}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>T('{n} 檔', {n: c.parsed.x})}}},
       scales:{
         x:{grid:{color:gc()},ticks:{color:tc(),stepSize:1},border:{display:false}},
         y:{ticks:{color:tc(),font:{size:14}},grid:{display:false},border:{display:false}},
@@ -925,12 +1138,12 @@ function buildLuCharts() {
 
   luPieChart = new Chart(elPie, {
     type:'doughnut',
-    data:{labels:TKEYS, datasets:[{data:TKEYS.map(t=>TCOUNT[t]),backgroundColor:colors,borderWidth:0,hoverOffset:8}]},
+    data:{labels:TKEYS.map(TS), datasets:[{data:TKEYS.map(t=>TCOUNT[t]),backgroundColor:colors,borderWidth:0,hoverOffset:8}]},
     options:{
       responsive:true, maintainAspectRatio:false, cutout:'50%',
       plugins:{
         legend:{display:true,position:'bottom',labels:{boxWidth:10,font:{size:14},color:tc(),padding:9}},
-        tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed} 檔`}},
+        tooltip:{callbacks:{label:c=>`${c.label}: ${T('{n} 檔', {n: c.parsed})}`}},
       }
     }
   });
@@ -939,7 +1152,7 @@ function buildLuCharts() {
 function buildLuFilters() {
   document.getElementById('luF').innerHTML = ['all',...TKEYS].map(t =>
     `<button class="lf${t==='all'&&ACTIVE_TYPE==='all'?' on':t===ACTIVE_TYPE?' on':''}" onclick="filterType('${t}',this)">
-      ${t==='all' ? '全部 '+LU.length : t+' '+TCOUNT[t]}
+      ${t==='all' ? T('全部')+' '+LU.length : TS(t)+' '+TCOUNT[t]}
     </button>`
   ).join('');
 }
@@ -964,13 +1177,13 @@ function renderLuGrid() {
   if(LU_VIEW==='card') {
     el.innerHTML = `<div class="lu-grid fade-in">${list.map(s => {
       const col = TCOL[s.type]||'#888';
-      const locked = s.locked ? `<span class="lu-locked">⚡一字板</span>` : '';
-      const streak = s.days>1 ? `<span class="lu-streak">連${s.days}日</span>` : '';
+      const locked = s.locked ? `<span class="lu-locked">${T('⚡一字板')}</span>` : '';
+      const streak = s.days>1 ? `<span class="lu-streak">${T('連{n}日', {n: s.days})}</span>` : '';
       // 多類型：用 "/" 分割，每個類型獨立 badge
       const types = s.type.split('/').map(t => t.trim()).filter(Boolean);
       const typeBadges = types.map(t => {
         const c2 = TCOL[t]||'#888';
-        return `<span class="lu-badge" style="background:${c2}22;color:${c2};margin-left:2px">${t}</span>`;
+        return `<span class="lu-badge" style="background:${c2}22;color:${c2};margin-left:2px">${TS(t)}</span>`;
       }).join('');
       return `<div class="lu-card" style="border-left-color:${col};cursor:pointer" onclick="goToStockAnalysis('${s.code}')">
         <div class="lu-top">
@@ -980,26 +1193,26 @@ function renderLuGrid() {
         <div class="lu-name">${s.name}</div>
         <div class="lu-bottom">
           <span class="lu-price">+10% ▲ ${s.price}</span>
-          <div style="text-align:right">${streak}<div class="lu-vol">量 ${(s.vol||0).toLocaleString()} 張</div></div>
+          <div style="text-align:right">${streak}<div class="lu-vol">${T('量 {v} 張', {v: (s.vol||0).toLocaleString()})}</div></div>
         </div>
       </div>`;
     }).join('')}</div>`;
   } else {
     el.innerHTML = `<div class="cb fade-in" style="padding:0;overflow-x:auto">
       <table class="tbl"><thead><tr>
-        <th>代號</th><th>名稱</th><th>主題類型</th><th>收盤</th>
-        <th>漲幅</th><th>成交量（張）</th><th>一字板</th><th>連漲停</th>
+        <th>${T('代號')}</th><th>${T('名稱')}</th><th>${T('主題類型')}</th><th>${T('收盤')}</th>
+        <th>${T('漲幅')}</th><th>${T('成交量（張）')}</th><th>${T('一字板')}</th><th>${T('連漲停')}</th>
       </tr></thead><tbody>
       ${list.map(s=>{
         const col = TCOL[s.type]||'#888';
         return `<tr style="cursor:pointer" onclick="goToStockAnalysis('${s.code}')">
           <td class="mono">${s.code}</td><td>${s.name}</td>
-          <td>${s.type.split('/').map(t=>{const c2=TCOL[t.trim()]||'#888';return`<span class="lu-badge" style="background:${c2}22;color:${c2};margin-right:2px">${t.trim()}</span>`;}).join('')}</td>
+          <td>${s.type.split('/').map(t=>{const c2=TCOL[t.trim()]||'#888';return`<span class="lu-badge" style="background:${c2}22;color:${c2};margin-right:2px">${TS(t.trim())}</span>`;}).join('')}</td>
           <td class="mono">${s.price}</td>
           <td class="mono up">+${s.pct||10}%</td>
           <td class="mono">${(s.vol||0).toLocaleString()}</td>
-          <td>${s.locked?'<span style="color:var(--gold)">⚡ 是</span>':'—'}</td>
-          <td class="mono ${s.days>1?'up':''}">${s.days>1?'連'+s.days+'日':'首次'}</td>
+          <td>${s.locked?`<span style="color:var(--gold)">${T('⚡ 是')}</span>`:'—'}</td>
+          <td class="mono ${s.days>1?'up':''}">${s.days>1?T('連{n}日', {n: s.days}):T('首次')}</td>
         </tr>`;
       }).join('')}
       </tbody></table>
@@ -1058,8 +1271,8 @@ function initInstTables() {
 
   const buyTbody  = document.querySelector('#instBuyTop tbody');
   const sellTbody = document.querySelector('#instSellTop tbody');
-  if(buyTbody)  buyTbody.innerHTML  = buyTop.length  ? buyTop.map(mkRow).join('')  : '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:14px">無法人資料</td></tr>';
-  if(sellTbody) sellTbody.innerHTML = sellTop.length ? sellTop.map(mkRow).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:14px">無法人資料</td></tr>';
+  if(buyTbody)  buyTbody.innerHTML  = buyTop.length  ? buyTop.map(mkRow).join('')  : `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:14px">${T('無法人資料')}</td></tr>`;
+  if(sellTbody) sellTbody.innerHTML = sellTop.length ? sellTop.map(mkRow).join('') : `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:14px">${T('無法人資料')}</td></tr>`;
 }
 
 function quickInst(code) {
@@ -1083,7 +1296,7 @@ function analyzeStock(codeArg) {
   const stockData = stocks[code];
 
   if(!stockData) {
-    instEl.innerHTML = `<div class="sig sig-n">「${code}」查無資料，請確認代號後重試</div>`;
+    instEl.innerHTML = `<div class="sig sig-n">${T('「{code}」查無資料，請確認代號後重試', {code})}</div>`;
     return;
   }
 
@@ -1106,7 +1319,7 @@ function analyzeStock(codeArg) {
   const allPos = fPos && tPos && dPos;
   const allNeg = fNeg && tNeg && dNeg;
   const sigClass = allPos?'sig-up':allNeg?'sig-dn':'sig-n';
-  const sigMsg = allPos?`📈 三大法人今日均買超 ${code}`:allNeg?`⚠️ 三大法人今日均賣超 ${code}`:`📊 三大法人買賣方向不一致`;
+  const sigMsg = allPos?T('📈 三大法人今日均買超 {code}', {code}):allNeg?T('⚠️ 三大法人今日均賣超 {code}', {code}):T('📊 三大法人買賣方向不一致');
 
   instEl.innerHTML = `<div class="rc fade-in">
     <div class="rh">
@@ -1117,22 +1330,22 @@ function analyzeStock(codeArg) {
       </span>
     </div>
     <div class="metrics" style="margin-bottom:14px">
-      <div class="mc"><div class="ml">成交量（張）</div><div class="mv" style="font-size:20px">${s.vol}</div></div>
-      <div class="mc"><div class="ml">外資買賣超（張）</div>
+      <div class="mc"><div class="ml">${T('成交量（張）')}</div><div class="mv" style="font-size:20px">${s.vol}</div></div>
+      <div class="mc"><div class="ml">${T('外資買賣超（張）')}</div>
         <div class="mv ${fPos?'up':fNeg?'dn':''}" style="font-size:20px">${fVal}</div></div>
-      <div class="mc"><div class="ml">投信買賣超（張）</div>
+      <div class="mc"><div class="ml">${T('投信買賣超（張）')}</div>
         <div class="mv ${tPos?'up':tNeg?'dn':''}" style="font-size:20px">${tVal}</div></div>
-      <div class="mc"><div class="ml">自營商買賣超（張）</div>
+      <div class="mc"><div class="ml">${T('自營商買賣超（張）')}</div>
         <div class="mv ${dPos?'up':dNeg?'dn':''}" style="font-size:20px">${dVal}</div></div>
     </div>
     <div class="sig ${sigClass}" style="margin-bottom:14px">${sigMsg}</div>
     <div style="font-size:14px;color:var(--text3);margin-bottom:7px;text-transform:uppercase;letter-spacing:.06em">
-      近 20 日三大法人買賣超走勢（張）
+      ${T('近 20 日三大法人買賣超走勢（張）')}
     </div>
     <div id="sLC-wrap" style="position:relative;height:240px">
       <canvas id="sLC"></canvas>
     </div>
-    <div id="sLC-note" style="font-size:13px;color:var(--text3);margin-top:6px;text-align:right">載入中…</div>
+    <div id="sLC-note" style="font-size:13px;color:var(--text3);margin-top:6px;text-align:right">${T('載入中…')}</div>
   </div>`;
 
   buildInstHistChart(code, fVal, tVal);
@@ -1173,24 +1386,24 @@ function buildInstHistChart(code, todayFStr, todayTStr) {
     labels = merged.map(h => h.date.slice(5).replace('-','/'));  // MM/DD
     dataF  = merged.map(h => h.f);
     dataT  = merged.map(h => h.t);
-    document.getElementById('sLC-note').textContent = '資料來源：歷史法人（最後一根為查詢日）';
+    document.getElementById('sLC-note').textContent = T('資料來源：歷史法人（最後一根為查詢日）');
   } else {
     // 無歷史資料：僅顯示今日一根，但位置對齊查詢日期
     const parseNet = v => { const n=parseInt(String(v).replace(/,/g,'')); return isNaN(n)?0:n; };
-    const dlabel = queryDate ? queryDate.slice(5).replace('-','/') : '今日';
+    const dlabel = queryDate ? queryDate.slice(5).replace('-','/') : T('今日');
     labels = [dlabel];
     dataF  = [parseNet(todayFStr)];
     dataT  = [parseNet(todayTStr)];
-    document.getElementById('sLC-note').textContent = '⚠️ 無歷史資料（需 FinMind Token）；僅顯示查詢日';
+    document.getElementById('sLC-note').textContent = T('⚠️ 無歷史資料（需 FinMind Token）；僅顯示查詢日');
   }
 
   instLineChart = new Chart(el, {
     type: 'bar',
     data: { labels, datasets: [
-      { label:'外資(張)', data:dataF,
+      { label:T('外資(張)'), data:dataF,
         backgroundColor: dataF.map(v => v>=0 ? 'rgba(61,126,255,.75)' : 'rgba(61,126,255,.35)'),
         borderRadius: 3, order: 1 },
-      { label:'投信(張)', data:dataT,
+      { label:T('投信(張)'), data:dataT,
         backgroundColor: dataT.map(v => v>=0 ? 'rgba(232,58,58,.75)' : 'rgba(34,196,152,.75)'),
         borderRadius: 3, order: 2 },
     ]},
@@ -1198,7 +1411,7 @@ function buildInstHistChart(code, todayFStr, todayTStr) {
       responsive:true, maintainAspectRatio:false,
       plugins:{
         legend:{display:true,position:'top',labels:{boxWidth:13,font:{size:14},color:'#374151',padding:14}},
-        tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString()} 張`}},
+        tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${T('{v} 張', {v: c.parsed.y.toLocaleString()})}`}},
       },
       scales:{
         x:{ticks:{color:tc(),font:{size:13},autoSkip:true,maxTicksLimit:12},
@@ -1262,7 +1475,7 @@ function analyzeWhale(codeArg) {
 
   // 顯示載入中
   const el = document.getElementById('whaleResult');
-  el.innerHTML = `<div class="sig sig-n">⏳ 查詢 ${_lastWhaleCode} 大戶資料中...</div>`;
+  el.innerHTML = `<div class="sig sig-n">${T('⏳ 查詢 {code} 大戶資料中...', {code: _lastWhaleCode})}</div>`;
 
   // 透過 proxy server 查詢
   fetch(`http://localhost:8765/whale?code=${_lastWhaleCode}`)
@@ -1270,7 +1483,7 @@ function analyzeWhale(codeArg) {
     .then(data => {
       if(data.error) {
         el.innerHTML = `<div class="sig sig-n">
-          ❌ 查詢失敗：${data.error}
+          ${T('❌ 查詢失敗：{err}', {err: data.error})}
         </div>`;
         return;
       }
@@ -1285,8 +1498,8 @@ function analyzeWhale(codeArg) {
     .catch(err => {
       console.error('Whale query error:', err);
       el.innerHTML = `<div class="sig sig-n">
-        ❌ 連線失敗<br>
-        <small style="color:var(--text3)">請確認 proxy server 是否正常運作</small><br>
+        ${T('❌ 連線失敗')}<br>
+        <small style="color:var(--text3)">${T('請確認 proxy server 是否正常運作')}</small><br>
         <small style="color:var(--text3);font-family:monospace">${err.message}</small>
       </div>`;
     });
@@ -1296,7 +1509,7 @@ function recomputeWhale() {
   try { _recomputeWhaleInner(); }
   catch(e) {
     const el = document.getElementById('whaleResult');
-    if(el) el.innerHTML = `<div class="sig sig-n">渲染錯誤：${e.message}<br><small style="font-family:monospace">${e.stack||''}</small></div>`;
+    if(el) el.innerHTML = `<div class="sig sig-n">${T('渲染錯誤：{msg}', {msg: e.message})}<br><small style="font-family:monospace">${e.stack||''}</small></div>`;
     console.error('recomputeWhale error:', e);
   }
 }
@@ -1308,9 +1521,9 @@ function _recomputeWhaleInner() {
   // Use real whale data from MARKET_DATA if available
   const rawW = (DATA.whale || {})[code];
   if(!rawW || rawW._error || !rawW.history || rawW.history.length === 0) {
-    const errMsg = (rawW && rawW._error) ? rawW._error : '集保 API 未回傳資料';
+    const errMsg = (rawW && rawW._error) ? rawW._error : T('集保 API 未回傳資料');
     el.innerHTML = `<div class="sig sig-n">
-      「${code}」無大戶籌碼資料<br>
+      ${T('「{code}」無大戶籌碼資料', {code})}<br>
       <small style="color:var(--text3);font-family:monospace">${errMsg}</small>
     </div>`;
     return;
@@ -1350,10 +1563,10 @@ function _recomputeWhaleInner() {
   const hldChg    = rawW.holder_chg || 0;
   const sigClass  = wChg > 1 ? 'sig-up' : wChg < -1 ? 'sig-dn' : 'sig-n';
   const sigMsg    = wChg > 1
-    ? `🐋 大戶持股增加 +${wChg.toFixed(2)}%，籌碼集中趨勢`
+    ? T('🐋 大戶持股增加 +{v}%，籌碼集中趨勢', {v: wChg.toFixed(2)})
     : wChg < -1
-    ? `⚠️ 大戶持股減少 ${wChg.toFixed(2)}%，籌碼鬆動`
-    : `➡️ 大戶持股變化不大（${wChg >= 0 ? '+' : ''}${wChg.toFixed(2)}%）`;
+    ? T('⚠️ 大戶持股減少 {v}%，籌碼鬆動', {v: wChg.toFixed(2)})
+    : T('➡️ 大戶持股變化不大（{v}%）', {v: (wChg >= 0 ? '+' : '') + wChg.toFixed(2)});
 
   const stocks = DATA.stocks || {};
   const sName  = (stocks[code] || {}).name || '';
@@ -1362,29 +1575,29 @@ function _recomputeWhaleInner() {
     <div class="rh">
       <span class="rcode">${code}</span>
       <span class="rname">${sName}</span>
-      <span style="font-size:14px;color:var(--text3);margin-left:8px">大戶≥${WHALE_THRESH}張 ／ 散戶＜${RETAIL_THRESH}張</span>
+      <span style="font-size:14px;color:var(--text3);margin-left:8px">${T('大戶≥{w}張 ／ 散戶＜{r}張', {w: WHALE_THRESH, r: RETAIL_THRESH})}</span>
     </div>
 
     <div class="metrics" style="margin-bottom:14px">
       <div class="mc">
-        <div class="ml">大戶持股（≥${WHALE_THRESH}張）</div>
+        <div class="ml">${T('大戶持股（≥{w}張）', {w: WHALE_THRESH})}</div>
         <div class="mv up">${whalePct.toFixed(2)}%</div>
         <div class="ms ${wChg>=0?'up':'dn'}">${wChg>=0?'▲':'▼'} ${Math.abs(wChg).toFixed(2)}%</div>
       </div>
       <div class="mc">
-        <div class="ml">散戶持股（＜${RETAIL_THRESH}張）</div>
+        <div class="ml">${T('散戶持股（＜{r}張）', {r: RETAIL_THRESH})}</div>
         <div class="mv dn">${retailPct.toFixed(2)}%</div>
-        <div class="ms" style="color:var(--text3)">${retailPeople.toLocaleString()} 人</div>
+        <div class="ms" style="color:var(--text3)">${T('{n} 人', {n: retailPeople.toLocaleString()})}</div>
       </div>
       <div class="mc">
-        <div class="ml">大戶人數</div>
+        <div class="ml">${T('大戶人數')}</div>
         <div class="mv" style="font-size:21px">${(whalePeople||rawW.whale_cnt||0).toLocaleString()}</div>
-        <div class="ms ${(rawW.whale_cnt_chg||0)>=0?'up':'dn'}" style="font-size:13px">${(rawW.whale_cnt_chg||0)>=0?'▲':'▼'} ${Math.abs(rawW.whale_cnt_chg||0)} 人</div>
+        <div class="ms ${(rawW.whale_cnt_chg||0)>=0?'up':'dn'}" style="font-size:13px">${(rawW.whale_cnt_chg||0)>=0?'▲':'▼'} ${T('{n} 人', {n: Math.abs(rawW.whale_cnt_chg||0)})}</div>
       </div>
       <div class="mc">
-        <div class="ml">總股東人數</div>
+        <div class="ml">${T('總股東人數')}</div>
         <div class="mv" style="font-size:21px">${(rawW.total_holders||0).toLocaleString()}</div>
-        <div class="ms ${hldChg>=0?'up':'dn'}" style="font-size:13px">${hldChg>=0?'▲':'▼'} ${Math.abs(hldChg).toLocaleString()} 人</div>
+        <div class="ms ${hldChg>=0?'up':'dn'}" style="font-size:13px">${hldChg>=0?'▲':'▼'} ${T('{n} 人', {n: Math.abs(hldChg).toLocaleString()})}</div>
       </div>
     </div>
 
@@ -1392,32 +1605,32 @@ function _recomputeWhaleInner() {
 
     <div class="whale-grid">
       <div>
-        <div style="font-size:14px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.07em">張數比例</div>
+        <div style="font-size:14px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.07em">${T('張數比例')}</div>
         ${buildWhaleBars(whalePct, midPct, retailPct)}
       </div>
       <div>
-        <div style="font-size:14px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.07em">持股分布</div>
+        <div style="font-size:14px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.07em">${T('持股分布')}</div>
         <div style="position:relative;height:200px"><canvas id="wPie"></canvas></div>
       </div>
     </div>
 
     <div style="font-size:14px;color:var(--text3);margin-bottom:7px;text-transform:uppercase;letter-spacing:.06em">
-      歷史大戶 vs 散戶持股趨勢（每週）
+      ${T('歷史大戶 vs 散戶持股趨勢（每週）')}
     </div>
     <div style="position:relative;height:280px"><canvas id="wLine"></canvas></div>
-    <div style="font-size:13px;color:var(--text3);margin-top:4px;text-align:right">資料來源：集保 TDCC（每週四更新）</div>
+    <div style="font-size:13px;color:var(--text3);margin-top:4px;text-align:right">${T('資料來源：集保 TDCC（每週四更新）')}</div>
 
     <!-- 歷史持股增減表格 -->
     <div style="margin-top:16px">
-      <div style="font-size:14px;color:var(--text3);margin-bottom:7px;text-transform:uppercase;letter-spacing:.06em">歷史記錄（近期）</div>
+      <div style="font-size:14px;color:var(--text3);margin-bottom:7px;text-transform:uppercase;letter-spacing:.06em">${T('歷史記錄（近期）')}</div>
       <div style="overflow-x:auto">
         <table class="tbl" id="whaleHistTable" style="width:100%;min-width:460px">
           <thead><tr>
-            <th style="text-align:left">日期</th>
-            <th style="text-align:right;color:var(--up)">大戶持股(%)</th>
-            <th style="text-align:right;color:var(--up)">大戶增減(%)</th>
-            <th style="text-align:right;color:var(--dn)">散戶持股(%)</th>
-            <th style="text-align:right;color:var(--text2)">內部人持股(%)</th>
+            <th style="text-align:left">${T('日期')}</th>
+            <th style="text-align:right;color:var(--up)">${T('大戶持股(%)')}</th>
+            <th style="text-align:right;color:var(--up)">${T('大戶增減(%)')}</th>
+            <th style="text-align:right;color:var(--dn)">${T('散戶持股(%)')}</th>
+            <th style="text-align:right;color:var(--text2)">${T('內部人持股(%)')}</th>
           </tr></thead>
           <tbody id="whaleHistTbody"></tbody>
         </table>
@@ -1434,7 +1647,7 @@ function _recomputeWhaleInner() {
   new Chart(document.getElementById('wPie'), {
     type:'doughnut',
     data:{
-      labels:[`大戶(≥${WHALE_THRESH}張)`,`中戶`,`散戶(<${RETAIL_THRESH}張)`],
+      labels:[T('大戶(≥{w}張)', {w: WHALE_THRESH}), T('中戶'), T('散戶(<{r}張)', {r: RETAIL_THRESH})],
       datasets:[{
         data:[whalePct, midPct, retailPct],
         backgroundColor:[CHART_UP, CHART_ACC, CHART_DN],
@@ -1479,7 +1692,7 @@ function _recomputeWhaleInner() {
       labels: hist.map(h => h.date ? h.date.slice(5).replace('-','/') : ''),
       datasets:[
         {
-          label:`大戶持股%（≥${WHALE_THRESH}張）`,
+          label:T('大戶持股%（≥{w}張）', {w: WHALE_THRESH}),
           data: hist.map(h=>h.whale),
           borderColor: UP_COLOR, borderWidth:2.5,
           pointRadius: hist.length > 20 ? 2 : 4,
@@ -1487,7 +1700,7 @@ function _recomputeWhaleInner() {
           fill:false, tension:.3, yAxisID:'y',
         },
         {
-          label:`散戶持股%（＜${RETAIL_THRESH}張）`,
+          label:T('散戶持股%（＜{r}張）', {r: RETAIL_THRESH}),
           data: hist.map(h=>h.retail),
           borderColor: DN_COLOR, borderWidth:2,
           pointRadius: hist.length > 20 ? 2 : 4,
@@ -1515,7 +1728,7 @@ function _recomputeWhaleInner() {
               if(!cur || !prv) return [];
               const wChg = (cur.whale - prv.whale).toFixed(2);
               const rChg = (cur.retail - prv.retail).toFixed(2);
-              return [`大戶增減: ${wChg>=0?'+':''}${wChg}%`, `散戶增減: ${rChg>=0?'+':''}${rChg}%`];
+              return [T('大戶增減: {v}%', {v: (wChg>=0?'+':'')+wChg}), T('散戶增減: {v}%', {v: (rChg>=0?'+':'')+rChg})];
             }
           }
         },
@@ -1570,9 +1783,9 @@ function _recomputeWhaleInner() {
 
 function buildWhaleBars(whalePct, midPct, retailPct) {
   const items = [
-    {label:`大戶（≥${WHALE_THRESH}張）`, val:whalePct, color:'var(--up)'},
-    {label:'中戶', val:midPct, color:'var(--acc)'},
-    {label:`散戶（＜${RETAIL_THRESH}張）`, val:retailPct, color:'var(--dn)'},
+    {label:T('大戶（≥{w}張）', {w: WHALE_THRESH}), val:whalePct, color:'var(--up)'},
+    {label:T('中戶'), val:midPct, color:'var(--acc)'},
+    {label:T('散戶（＜{r}張）', {r: RETAIL_THRESH}), val:retailPct, color:'var(--dn)'},
   ];
   return items.map(i=>`
     <div class="ibr">
@@ -1586,6 +1799,9 @@ function buildWhaleBars(whalePct, midPct, retailPct) {
    INIT — 根據 RADAR_DEFAULT_PAGE 顯示對應區塊
 ═══════════════════════════════════════════════ */
 (function() {
+  translateStatic(document.body);
+  document.title = T('類股熱點');
+
   const page = (typeof window.RADAR_DEFAULT_PAGE !== 'undefined')
     ? window.RADAR_DEFAULT_PAGE : 'sector';
 

@@ -114,3 +114,30 @@ def test_import_csv_trades_progress_callback(test_db):
         on_progress=lambda done, total: progress_calls.append((done, total)),
     )
     assert progress_calls == [(1, 2), (2, 2)]
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("Buy", "買入"), ("SELL", "賣出"), (" buy ", "買入"), ("買入", "買入"), ("賣出", "賣出"),
+])
+def test_normalize_csv_accepts_english_directions(raw, expected):
+    df = pd.DataFrame({"date": ["2026-01-01"], "ticker": ["2330"], "direction": [raw],
+                       "price": [100], "shares": [10]})
+    result = ts.validate_csv_rows(df)
+    assert result["clean"]["direction"].iloc[0] == expected
+    assert result["bad_direction"].empty
+
+
+def test_normalize_csv_maps_english_reasons_back_to_chinese():
+    df = pd.DataFrame({"date": ["2026-01-01", "2026-02-01"], "ticker": ["2330", "2330"],
+                       "direction": ["Buy", "Sell"], "price": [100, 120], "shares": [10, 10],
+                       "reason": ["Dollar-cost averaging", None],
+                       "exit_reason": [None, "target reached"]})
+    clean = ts.validate_csv_rows(df)["clean"]
+    assert clean["reason"].iloc[0] == "定期定額"
+    assert clean["exit_reason"].iloc[1] == "達標獲利（到目標價）"
+
+
+def test_normalize_csv_keeps_unknown_directions_invalid():
+    df = pd.DataFrame({"date": ["2026-01-01"], "ticker": ["2330"], "direction": ["hold"],
+                       "price": [100], "shares": [10]})
+    assert len(ts.validate_csv_rows(df)["bad_direction"]) == 1

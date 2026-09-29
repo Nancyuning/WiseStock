@@ -8,6 +8,7 @@ formatting.py
 import pandas as pd
 
 from database import TRADE_COLUMNS
+from i18n import t
 
 TRADE_COL_LABELS = {
     "id": "ID", "date": "日期", "ticker": "股票", "direction": "方向",
@@ -28,7 +29,9 @@ def fmt_price(val):
 
 
 def color_dir(val):
-    return f"color: {'#FF6B00' if val=='買入' else '#00BFA5'}; font-weight: bold"
+    # val 可能是資料庫的原文「買入」或顯示用的翻譯（Buy）
+    is_buy = val in ("買入", t("買入"))
+    return f"color: {'#FF6B00' if is_buy else '#00BFA5'}; font-weight: bold"
 
 
 def color_pnl(val):

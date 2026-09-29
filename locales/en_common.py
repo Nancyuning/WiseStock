@@ -1,0 +1,58 @@
+"""跨頁面共用的詞彙：導覽、資料庫存的固定值（買入/賣出、理由、大盤位階）等。"""
+
+EN = {
+    # 導覽
+    "監控中心": "Monitor",
+    "市場研究": "Research",
+    "紀錄維護": "Trades",
+    "績效回顧": "Performance",
+    "帳號管理": "Accounts",
+    # 買賣方向（資料庫存中文，顯示時翻譯）
+    "買入": "Buy",
+    "賣出": "Sell",
+    "全部": "All",
+    # 買入理由
+    "技術面突破": "Technical breakout",
+    "基本面看好": "Strong fundamentals",
+    "法人買超": "Institutional buying",
+    "定期定額": "Dollar-cost averaging",
+    "看新聞/聽消息": "News / tips",
+    "其他": "Other",
+    # 賣出理由
+    "停損觸發（原始防線失守）": "Stop-loss hit",
+    "達標獲利（到目標價）": "Target reached",
+    "邏輯消失（買進理由不再成立）": "Thesis no longer valid",
+    "換股操作（找到更好的標的）": "Switched to a better pick",
+    # 大盤位階（get_market_level 的結果，也會存進資料庫）
+    "高位（接近52週高點）": "High (near 52-week high)",
+    "中位（正常區間）": "Mid (normal range)",
+    "低位（回調整理）": "Low (pullback)",
+    "恐慌（大跌中）": "Panic (sharp decline)",
+    "無法判斷": "Unavailable",
+    # 多個頁面共用（欄位名稱、提示訊息）
+    '資料不足': 'Insufficient data',
+    '股票': 'Stock',
+    '均成本': 'Avg cost',
+    '賣出理由': 'Sell reason',
+    '備註': 'Notes',
+    '買入理由': 'Buy reason',
+    '現價': 'Price',
+    '日期': 'Date',
+    '方向': 'Side',
+    '價格': 'Price',
+    '股數': 'Shares',
+    '帳號': 'Username',
+    '管理員': 'Administrator',
+    '一般用戶': 'User',
+    '確認新密碼': 'Confirm new password',
+    '兩次密碼不一致': 'Passwords do not match',
+    '目標價': 'Target',
+    '停損價': 'Stop-loss',
+    '選擇股票': 'Select a stock',
+    '還沒有任何交易紀錄': 'No trades yet',
+    '大盤位階': 'Market level',
+    '預估EPS': 'Est. EPS',
+    '當日0050價': '0050 on trade date',
+    '建立時間': 'Created at',
+    '成交量': 'Volume',
+}

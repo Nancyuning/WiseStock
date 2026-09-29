@@ -34,6 +34,7 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
+from i18n import t
 from pathlib import Path
 import uuid
 import threading
@@ -247,7 +248,7 @@ def _cache_get_safe(key: str, max_age_days: int = 5) -> tuple:
             saved_at = cached.get("_saved_at", 0)
             if _is_data_valid(data):
                 label = datetime.fromtimestamp(saved_at).strftime("%Y-%m-%d %H:%M")
-                return data, f"{label} 的快取"
+                return data, t("{label} 的快取", label=label)
         except Exception:
             pass
 
@@ -272,7 +273,7 @@ def _cache_get_safe(key: str, max_age_days: int = 5) -> tuple:
             saved_at = cached.get("_saved_at", 0)
             if _is_data_valid(data):
                 label = datetime.fromtimestamp(saved_at).strftime("%Y-%m-%d %H:%M")
-                return data, f"{label} 的快取（歷史備援）"
+                return data, t("{label} 的快取（歷史備援）", label=label)
         except Exception:
             continue
 
@@ -305,7 +306,7 @@ def _call(dataset: str, params: dict,
             return pd.DataFrame(), f"API error {r.status_code}: {r.text[:200]}"
         data = r.json()
         if data.get("msg") != "success":
-            return pd.DataFrame(), data.get("msg", "未知錯誤")
+            return pd.DataFrame(), data.get("msg", t("未知錯誤"))
         rows = data.get("data", [])
         _cache_set(cache_key, rows)
         return pd.DataFrame(rows), None
@@ -522,11 +523,11 @@ def get_taiex_index(date: str = None) -> tuple[float, float, str | None]:
                 _cache_set(cache_key, {"close": close, "chg_pct": chg_pct})
                 return close, chg_pct, None
             else:
-                errors.append("TWSE即時: z/pz 欄位均為 '-'（盤前/盤後無即時價）")
+                errors.append(t("TWSE即時: z/pz 欄位均為 '-'（盤前/盤後無即時價）"))
         else:
-            errors.append("TWSE即時: msgArray 為空")
+            errors.append(t("TWSE即時: msgArray 為空"))
     except Exception as e:
-        errors.append(f"TWSE即時: {e}")
+        errors.append(t("TWSE即時: {e}", e=e))
 
     # ── 方法 2：TWSE MI_INDEX（加日期驗證）────────────────
     # 關鍵：比對回傳的民國日期與查詢日期，不符就拒絕
@@ -551,8 +552,8 @@ def get_taiex_index(date: str = None) -> tuple[float, float, str | None]:
                 iso_date = _rocdate_to_iso(roc_date)
                 if iso_date and iso_date != date:
                     errors.append(
-                        f"MI_INDEX: 回傳日期 {iso_date} ≠ 查詢日期 {date}，"
-                        f"拒絕採用（盤中查今日會拿到昨天的資料）"
+                        t("MI_INDEX: 回傳日期 {iso_date} ≠ 查詢日期 {date}，拒絕採用（盤中查今日會拿到昨天的資料）",
+                          iso_date=iso_date, date=date)
                     )
                 else:
                     def _parse(col):
@@ -578,11 +579,11 @@ def get_taiex_index(date: str = None) -> tuple[float, float, str | None]:
                         _cache_set(cache_key, {"close": close, "chg_pct": chg_pct})
                         return close, chg_pct, None
                     else:
-                        errors.append("MI_INDEX: 解析到 close=0")
+                        errors.append(t("MI_INDEX: 解析到 close=0"))
             else:
-                errors.append(f"MI_INDEX: 找不到加權指數列，欄位={list(df_idx.columns)[:8]}")
+                errors.append(t("MI_INDEX: 找不到加權指數列，欄位={cols}", cols=list(df_idx.columns)[:8]))
         else:
-            errors.append("MI_INDEX: 回傳空（盤後尚未更新或非交易日）")
+            errors.append(t("MI_INDEX: 回傳空（盤後尚未更新或非交易日）"))
     except Exception as e:
         errors.append(f"MI_INDEX: {e}")
 
@@ -615,10 +616,11 @@ def get_taiex_index(date: str = None) -> tuple[float, float, str | None]:
                     # 這個 close 是 0050 股價，不是大盤指數
                     # 不寫 cache，僅告知失敗讓 UI 顯示 N/A
                     errors.append(
-                        f"FinMind: 大盤指數無法從 TaiwanStockPrice 取得（0050={close}，非指數值）"
+                        t("FinMind: 大盤指數無法從 TaiwanStockPrice 取得（0050={close}，非指數值）", close=close)
                     )
             else:
-                errors.append(f"FinMind: date={date} 無資料（status={raw.get('status')}, msg={raw.get('msg')}）")
+                errors.append(t("FinMind: date={date} 無資料（status={status}, msg={msg}）",
+                                  date=date, status=raw.get('status'), msg=raw.get('msg')))
         except Exception as e:
             errors.append(f"FinMind: {e}")
 
@@ -649,12 +651,12 @@ def _twse_get(path: str, cache_key: str, ttl: int) -> tuple[pd.DataFrame, str | 
             # ★ 歷史備援：API 空值時回傳最近有效快取
             hist_data, label = _cache_get_safe(cache_key)
             if hist_data:
-                return pd.DataFrame(hist_data), f"⚠️ 證交所 API 尚未更新，顯示 {label}"
-            return pd.DataFrame(), "證交所 API 回傳空資料（盤後尚未更新）"
+                return pd.DataFrame(hist_data), t("⚠️ 證交所 API 尚未更新，顯示 {label}", label=label)
+            return pd.DataFrame(), t("證交所 API 回傳空資料（盤後尚未更新）")
         _cache_set(cache_key, data)
         return pd.DataFrame(data), None
     except Exception as e:
-        return pd.DataFrame(), f"證交所 API 失敗：{e}"
+        return pd.DataFrame(), t("證交所 API 失敗：{e}", e=e)
 
 
 def _tpex_get(path: str, cache_key: str, ttl: int) -> tuple[pd.DataFrame, str | None]:
@@ -675,12 +677,12 @@ def _tpex_get(path: str, cache_key: str, ttl: int) -> tuple[pd.DataFrame, str | 
             # ★ 歷史備援：API 空值時回傳最近有效快取
             hist_data, label = _cache_get_safe(cache_key)
             if hist_data:
-                return pd.DataFrame(hist_data), f"⚠️ 櫃買 API 尚未更新，顯示 {label}"
-            return pd.DataFrame(), "櫃買 API 回傳空資料（盤後尚未更新）"
+                return pd.DataFrame(hist_data), t("⚠️ 櫃買 API 尚未更新，顯示 {label}", label=label)
+            return pd.DataFrame(), t("櫃買 API 回傳空資料（盤後尚未更新）")
         _cache_set(cache_key, data)
         return pd.DataFrame(data), None
     except Exception as e:
-        return pd.DataFrame(), f"櫃買 API 失敗：{e}"
+        return pd.DataFrame(), t("櫃買 API 失敗：{e}", e=e)
 
 def _twse_rwd_get(date: str, cache_key: str, ttl: int) -> tuple:
     """
@@ -725,23 +727,23 @@ def _twse_rwd_get(date: str, cache_key: str, ttl: int) -> tuple:
             if stat != "OK":
                 hist_data, label = _cache_get_safe(cache_key)
                 if hist_data:
-                    return pd.DataFrame(hist_data), f"⚠️ TWSE rwd 尚未更新，顯示 {label}"
-                return pd.DataFrame(), f"TWSE rwd STOCK_DAY_ALL stat={stat}（盤後尚未更新）"
+                    return pd.DataFrame(hist_data), t("⚠️ TWSE rwd 尚未更新，顯示 {label}", label=label)
+                return pd.DataFrame(), t("TWSE rwd STOCK_DAY_ALL stat={stat}（盤後尚未更新）", stat=stat)
 
             actual_yyyymmdd = raw.get("date", "")
             if actual_yyyymmdd and actual_yyyymmdd != yyyymmdd:
                 hist_data, label = _cache_get_safe(cache_key)
                 if hist_data:
-                    return pd.DataFrame(hist_data), f"⚠️ TWSE rwd 回傳 {actual_yyyymmdd}≠{yyyymmdd}，顯示 {label}"
-                return pd.DataFrame(), f"TWSE rwd 回傳日期 {actual_yyyymmdd} ≠ 查詢 {yyyymmdd}"
+                    return pd.DataFrame(hist_data), t("⚠️ TWSE rwd 回傳 {actual}≠{expected}，顯示 {label}", actual=actual_yyyymmdd, expected=yyyymmdd, label=label)
+                return pd.DataFrame(), t("TWSE rwd 回傳日期 {actual} ≠ 查詢 {expected}", actual=actual_yyyymmdd, expected=yyyymmdd)
 
             fields = raw.get("fields", [])
             rows   = raw.get("data", [])
             if not rows:
                 hist_data, label = _cache_get_safe(cache_key)
                 if hist_data:
-                    return pd.DataFrame(hist_data), f"⚠️ TWSE rwd 無資料，顯示 {label}"
-                return pd.DataFrame(), f"TWSE rwd {date} 無資料"
+                    return pd.DataFrame(hist_data), t("⚠️ TWSE rwd 無資料，顯示 {label}", label=label)
+                return pd.DataFrame(), t("TWSE rwd {date} 無資料", date=date)
 
             df = pd.DataFrame(rows, columns=fields) if fields else pd.DataFrame(rows)
 
@@ -750,8 +752,8 @@ def _twse_rwd_get(date: str, cache_key: str, ttl: int) -> tuple:
             if len(csv_rows) < 2:
                 hist_data, label = _cache_get_safe(cache_key)
                 if hist_data:
-                    return pd.DataFrame(hist_data), f"⚠️ TWSE rwd 無資料，顯示 {label}"
-                return pd.DataFrame(), f"TWSE rwd {date} 無資料"
+                    return pd.DataFrame(hist_data), t("⚠️ TWSE rwd 無資料，顯示 {label}", label=label)
+                return pd.DataFrame(), t("TWSE rwd {date} 無資料", date=date)
 
             df = pd.DataFrame(csv_rows[1:], columns=csv_rows[0])
 
@@ -762,15 +764,15 @@ def _twse_rwd_get(date: str, cache_key: str, ttl: int) -> tuple:
                 if actual_iso and actual_iso != expected_iso:
                     hist_data, label = _cache_get_safe(cache_key)
                     if hist_data:
-                        return pd.DataFrame(hist_data), f"⚠️ TWSE rwd 回傳 {actual_iso}≠{expected_iso}，顯示 {label}"
-                    return pd.DataFrame(), f"TWSE rwd 回傳日期 {actual_iso} ≠ 查詢 {expected_iso}"
+                        return pd.DataFrame(hist_data), t("⚠️ TWSE rwd 回傳 {actual}≠{expected}，顯示 {label}", actual=actual_iso, expected=expected_iso, label=label)
+                    return pd.DataFrame(), t("TWSE rwd 回傳日期 {actual} ≠ 查詢 {expected}", actual=actual_iso, expected=expected_iso)
 
         records = df.to_dict("records")
         _cache_set(cache_key, records, min_rows=50)
         return df, None
 
     except Exception as e:
-        return pd.DataFrame(), f"TWSE rwd 失敗：{e}"
+        return pd.DataFrame(), t("TWSE rwd 失敗：{e}", e=e)
 
 
 def _get_stock_info() -> pd.DataFrame:
@@ -783,7 +785,7 @@ def _get_stock_info() -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════
 def _get_finmind_daily(date: str) -> tuple[pd.DataFrame, str | None]:
     if not FINMIND_TOKEN:
-        return pd.DataFrame(), "未設定 FINMIND_TOKEN"
+        return pd.DataFrame(), t("未設定 FINMIND_TOKEN")
 
     cache_key = f"finmind_daily_{date}"
     cached = _cache_get(cache_key, 600)
@@ -808,8 +810,8 @@ def _get_finmind_daily(date: str) -> tuple[pd.DataFrame, str | None]:
             # ★ 歷史備援：嘗試讀取最近一次有效快取
             hist_data, label = _cache_get_safe(cache_key)
             if hist_data:
-                return pd.DataFrame(hist_data), f"⚠️ FinMind 尚未更新，顯示 {label}"
-            return pd.DataFrame(), f"FinMind TaiwanStockPrice 無資料（{raw.get('msg','')}）"
+                return pd.DataFrame(hist_data), t("⚠️ FinMind 尚未更新，顯示 {label}", label=label)
+            return pd.DataFrame(), t("FinMind TaiwanStockPrice 無資料（{msg}）", msg=raw.get('msg',''))
 
         df = pd.DataFrame(raw["data"])
         rename = {
@@ -838,7 +840,7 @@ def _get_finmind_daily(date: str) -> tuple[pd.DataFrame, str | None]:
         return df, None
 
     except Exception as e:
-        return pd.DataFrame(), f"FinMind daily 失敗：{e}"
+        return pd.DataFrame(), t("FinMind daily 失敗：{e}", e=e)
 
 
 def _merge_sector(df: pd.DataFrame, market_filter: list) -> pd.DataFrame:
@@ -869,7 +871,7 @@ def get_twse_daily(date: str = None) -> tuple[pd.DataFrame, str | None]:
         if not _is_trading_day(query_dt):
             prev_date = _prev_trading_day(query_dt).strftime("%Y-%m-%d")
             df, err = get_twse_daily(prev_date)
-            note = f"⚠️ {date} 為休市日，顯示 {prev_date} 資料"
+            note = t("⚠️ {date} 為休市日，顯示 {prev_date} 資料", date=date, prev_date=prev_date)
             return df, (note if not df.empty else err)
     except Exception:
         pass
@@ -894,7 +896,7 @@ def get_twse_daily(date: str = None) -> tuple[pd.DataFrame, str | None]:
     cache_key = f"twse_daily_{date}"
     df_price, err = _twse_rwd_get(date, cache_key, ttl=1800)
     if err or df_price.empty:
-        return pd.DataFrame(), err or f"{date} 無上市行情資料"
+        return pd.DataFrame(), err or t("{date} 無上市行情資料", date=date)
 
     # rwd API 欄位為中文：證券代號, 證券名稱, 成交股數, 成交金額, 開盤價, 最高價, 最低價, 收盤價, 漲跌價差, 成交筆數
     rename = {
@@ -934,7 +936,7 @@ def get_tpex_daily(date: str = None) -> tuple[pd.DataFrame, str | None]:
         if not _is_trading_day(query_dt):
             prev_date = _prev_trading_day(query_dt).strftime("%Y-%m-%d")
             df, err = get_tpex_daily(prev_date)
-            note = f"⚠️ {date} 為休市日，顯示 {prev_date} 資料"
+            note = t("⚠️ {date} 為休市日，顯示 {prev_date} 資料", date=date, prev_date=prev_date)
             return df, (note if not df.empty else err)
     except Exception:
         pass
@@ -959,7 +961,7 @@ def get_tpex_daily(date: str = None) -> tuple[pd.DataFrame, str | None]:
     cache_key = f"tpex_daily_{date}"
     df_price, err = _tpex_get("/tpex_mainboard_quotes", cache_key, ttl=1800)
     if err or df_price.empty:
-        return pd.DataFrame(), err or f"{date} 無上櫃行情資料"
+        return pd.DataFrame(), err or t("{date} 無上櫃行情資料", date=date)
 
     # ★ 日期驗證：TPEX 欄位 "日期" 格式為 "115/04/28"
     date_col = next(
@@ -972,8 +974,8 @@ def get_tpex_daily(date: str = None) -> tuple[pd.DataFrame, str | None]:
         if actual_iso and actual_iso != date:
             _cache_clear(cache_key)   # 刪掉日期錯誤的 cache
             return pd.DataFrame(), (
-                f"TPEX 資料日期 {actual_iso} ≠ 查詢日期 {date}，"
-                f"今日資料尚未更新（通常 15:30 後）"
+                t("TPEX 資料日期 {actual} ≠ 查詢日期 {date}，今日資料尚未更新（通常 15:30 後）",
+                  actual=actual_iso, date=date)
             )
 
     rename = {
@@ -1036,15 +1038,15 @@ def get_limit_up_stocks(
             frames.append(df_tp)
 
     if not frames:
-        return pd.DataFrame(), "無行情資料，請確認日期是否為交易日"
+        return pd.DataFrame(), t("無行情資料，請確認日期是否為交易日")
 
     df_all = pd.concat(frames, ignore_index=True)
     if "漲跌幅%" not in df_all.columns:
-        return pd.DataFrame(), "行情資料缺少漲跌幅欄位"
+        return pd.DataFrame(), t("行情資料缺少漲跌幅欄位")
 
     df_lu = df_all[df_all["漲跌幅%"] >= threshold_pct].copy()
     if df_lu.empty:
-        return pd.DataFrame(), f"{date} 無漲停個股（門檻 {threshold_pct}%）"
+        return pd.DataFrame(), t("{date} 無漲停個股（門檻 {threshold_pct}%）", date=date, threshold_pct=threshold_pct)
 
     if all(c in df_lu.columns for c in ["開盤", "最高", "最低"]):
         df_lu["是否一字板"] = (
@@ -1097,7 +1099,7 @@ def get_institutional_investors(date: str = None) -> tuple[pd.DataFrame, str | N
             prev_date = _prev_trading_day(query_dt).strftime("%Y-%m-%d")
             df, err = get_institutional_investors(prev_date)
             if not df.empty:
-                return df, f"⚠️ {date} 為休市日，顯示 {prev_date} 資料"
+                return df, t("⚠️ {date} 為休市日，顯示 {prev_date} 資料", date=date, prev_date=prev_date)
     except Exception:
         pass
 
@@ -1122,16 +1124,16 @@ def get_institutional_investors(date: str = None) -> tuple[pd.DataFrame, str | N
                 # API 回空（可能是假日或資料未更新）→ 嘗試歷史快取備援
                 hist_data, hist_label = _cache_get_safe(cache_key, max_age_days=7)
                 if hist_data:
-                    return pd.DataFrame(hist_data), f"⚠️ {date} 無資料，顯示{hist_label}"
-                return pd.DataFrame(), f"三大法人 API stat={stat}，可能非交易日或收盤後才更新"
+                    return pd.DataFrame(hist_data), t("⚠️ {date} 無資料，顯示{hist_label}", date=date, hist_label=hist_label)
+                return pd.DataFrame(), t("三大法人 API stat={stat}，可能非交易日或收盤後才更新", stat=stat)
             df = pd.DataFrame(rows, columns=fields)
             _cache_set(cache_key, df.to_dict("records"))
         except Exception as e:
             # 例外時也嘗試歷史快取備援
             hist_data, hist_label = _cache_get_safe(cache_key, max_age_days=7)
             if hist_data:
-                return pd.DataFrame(hist_data), f"⚠️ 連線失敗，顯示{hist_label}"
-            return pd.DataFrame(), f"三大法人抓取失敗：{e}"
+                return pd.DataFrame(hist_data), t("⚠️ 連線失敗，顯示{hist_label}", hist_label=hist_label)
+            return pd.DataFrame(), t("三大法人抓取失敗：{e}", e=e)
 
     zh_rename = {
         "證券代號": "代號", "證券名稱": "名稱",
@@ -1516,8 +1518,8 @@ def _get_tdcc_full() -> tuple[pd.DataFrame, str | None]:
 
         if "stock_id" not in df_all.columns:
             return pd.DataFrame(), (
-                f"找不到證券代號欄。原始欄位：{orig_cols}，"
-                f"嘗試 map：{col_map}"
+                t("找不到證券代號欄。原始欄位：{orig_cols}，嘗試 map：{col_map}",
+                  orig_cols=orig_cols, col_map=col_map)
             )
 
         # ── 數值轉換 ───────────────────────────────────────
@@ -1566,7 +1568,7 @@ def _get_tdcc_full() -> tuple[pd.DataFrame, str | None]:
         return df_all, None
 
     except Exception as e:
-        return pd.DataFrame(), f"集保下載失敗：{e}"
+        return pd.DataFrame(), t("集保下載失敗：{e}", e=e)
 
 
 def get_tdcc_shareholding(stock_id: str) -> tuple[pd.DataFrame, str | None]:
@@ -1584,13 +1586,13 @@ def get_tdcc_shareholding(stock_id: str) -> tuple[pd.DataFrame, str | None]:
     if err:
         return pd.DataFrame(), err
     if df_all.empty:
-        return pd.DataFrame(), "集保全市場資料為空"
+        return pd.DataFrame(), t("集保全市場資料為空")
 
     df_all["stock_id"] = df_all["stock_id"].astype(str).str.strip()
     df = df_all[df_all["stock_id"] == sid].copy()
     if df.empty:
         sample = df_all["stock_id"].unique()[:5].tolist()
-        return pd.DataFrame(), f"集保無 {sid} 資料（前幾個代號範例：{sample}）"
+        return pd.DataFrame(), t("集保無 {sid} 資料（前幾個代號範例：{sample}）", sid=sid, sample=sample)
 
     _cache_set(per_stock_key, df.to_dict("records"))
     return df, None
@@ -1775,8 +1777,20 @@ def build_market_data() -> dict:
     }
 
     results: dict = {}
+    try:
+        from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+        ctx = get_script_run_ctx()
+    except Exception:
+        ctx = None
+
+    def _run(fn, args):
+        # 讓 worker thread 也能讀到 st.session_state（t() 需要知道使用者選的語言）
+        if ctx is not None:
+            add_script_run_ctx(threading.current_thread(), ctx)
+        return fn(*args)
+
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(fn, *args): name for name, (fn, args) in tasks.items()}
+        futures = {pool.submit(_run, fn, args): name for name, (fn, args) in tasks.items()}
         for fut in as_completed(futures):
             name = futures[fut]
             try:

@@ -1,6 +1,6 @@
 """
 views/research.py
-市場研究頁面：技術圖表 + 買賣點評分 + 水位計算機 + 類股熱點
+市場研究頁面：市場掃描 + 個股分析（買賣點評分）+ 技術圖表
 """
 from __future__ import annotations
 import json
@@ -10,11 +10,18 @@ from pathlib import Path
 from datetime import datetime
 
 from stock_data import get_relative_strength
-from database import get_open_positions
-from formatting import fmt_pct, fmt_price
 from stock_chart_widget import render_stock_chart_section
-from services.scoring import score_buy, score_sell, classify_rebalance
-from strategy import STRATEGY
+from services.scoring import score_buy, score_sell
+from i18n import t, t_cols, get_lang
+
+# 選用的擴充分頁：views/extra_tabs.py 若存在，提供 TABS = [(分頁名稱, render 函式), ...]
+# render 函式參數為 (cached_name, cached_price, user_id)。沒有這個檔案時只顯示內建分頁。
+try:
+    from views.extra_tabs import TABS as _EXTRA_TABS
+except ImportError:
+    _EXTRA_TABS = []
+
+_BUILTIN_TABS = ["市場掃描", "個股分析", "技術圖表"]
 
 # ══════════════════════════════════════════════════════════
 # 模組層級 import + 快取函式
@@ -29,20 +36,27 @@ from market_radar_data import (
     _prev_trading_day, clear_all_cache,
 )
 
+# 回傳值含已翻譯的提示訊息，所以語言也要是快取 key 的一部分（lang 參數只用來區分快取；注意不能加底線前綴，st.cache_data 會忽略底線開頭的參數）
 @st.cache_data(ttl=300)
-def _c_twse(d):  return get_twse_daily(d)
+def _c_twse_cached(d, lang):  return get_twse_daily(d)
 
 @st.cache_data(ttl=300)
-def _c_tpex(d):  return get_tpex_daily(d)
+def _c_tpex_cached(d, lang):  return get_tpex_daily(d)
 
 @st.cache_data(ttl=1800)
-def _c_inst(d):  return get_institutional_investors(d)
+def _c_inst_cached(d, lang):  return get_institutional_investors(d)
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _c_taiex(d): return get_taiex_index(d)
+def _c_taiex_cached(d, lang): return get_taiex_index(d)
 
 @st.cache_data(ttl=1800)
-def _c_lu(d):    return get_limit_up_stocks(date=d, market="both")
+def _c_lu_cached(d, lang):    return get_limit_up_stocks(date=d, market="both")
+
+def _c_twse(d):  return _c_twse_cached(d, get_lang())
+def _c_tpex(d):  return _c_tpex_cached(d, get_lang())
+def _c_inst(d):  return _c_inst_cached(d, get_lang())
+def _c_taiex(d): return _c_taiex_cached(d, get_lang())
+def _c_lu(d):    return _c_lu_cached(d, get_lang())
 
 
 def render(cached_name, cached_price, user_id: str = "admin"):
@@ -57,14 +71,16 @@ def render(cached_name, cached_price, user_id: str = "admin"):
     if analyze_code and st.session_state.research_active_tab != 1:
         st.session_state.research_active_tab = 1
     
-    tab_names = ["市場掃描", "個股分析", "技術圖表", "水位計算機"]
+    tab_names = _BUILTIN_TABS + [name for name, _ in _EXTRA_TABS]
     active_idx = st.session_state.research_active_tab
+    if active_idx >= len(tab_names):
+        active_idx = st.session_state.research_active_tab = 0
     
     # 手動渲染 tabs（用 button 模擬）
-    cols = st.columns(4)
+    cols = st.columns(len(tab_names))
     for i, name in enumerate(tab_names):
         with cols[i]:
-            if st.button(name, key=f"tab_{i}", width="stretch", 
+            if st.button(t(name), key=f"tab_{i}", width="stretch", 
                         type="primary" if i == active_idx else "secondary"):
                 st.session_state.research_active_tab = i
                 # ★ 切換到非個股分析 tab 時，清除 analyze 參數
@@ -81,8 +97,8 @@ def render(cached_name, cached_price, user_id: str = "admin"):
         _render_stock_analysis_tab(cached_name, cached_price)
     elif active_idx == 2:
         _render_chart_tab(cached_name, cached_price)
-    elif active_idx == 3:
-        _render_water_level(cached_name, cached_price, user_id)
+    else:
+        _EXTRA_TABS[active_idx - len(_BUILTIN_TABS)][1](cached_name, cached_price, user_id)
 
 
 def _render_stock_analysis_tab(cached_name, cached_price):
@@ -100,20 +116,20 @@ def _render_stock_analysis_tab(cached_name, cached_price):
     # ═══════════════════════════════════════════════════════════
     # 搜尋框
     # ═══════════════════════════════════════════════════════════
-    st.markdown("### 🔍 個股深度分析")
-    st.caption("輸入股票代號，一次查看技術面評分、籌碼面分析")
+    st.markdown(t("### 🔍 個股深度分析"))
+    st.caption(t("輸入股票代號，一次查看技術面評分、籌碼面分析"))
     
     col1, col2 = st.columns([5, 1])
     with col1:
         ticker_input = st.text_input(
-            "輸入股票代號（例如 2330）",
+            t("輸入股票代號（例如 2330）"),
             key="stock_analysis_ticker",
             value=ticker if ticker else "",
             label_visibility="collapsed",
-            placeholder="股票代號，例如 2330"
+            placeholder=t("股票代號，例如 2330")
         )
     with col2:
-        search_btn = st.button("深度分析", key="stock_analysis_btn", width="stretch", type="primary")
+        search_btn = st.button(t("深度分析"), key="stock_analysis_btn", width="stretch", type="primary")
     
     # 當使用者點擊查詢按鈕
     if search_btn and ticker_input.strip():
@@ -123,7 +139,7 @@ def _render_stock_analysis_tab(cached_name, cached_price):
     ticker = ticker_input.strip().upper()
     
     if not ticker:
-        st.info("👆 請輸入股票代號開始分析")
+        st.info(t("👆 請輸入股票代號開始分析"))
         return
     
     # ═══════════════════════════════════════════════════════════
@@ -135,9 +151,9 @@ def _render_stock_analysis_tab(cached_name, cached_price):
     # 1. 買賣點評分
     # ═══════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("### 📊 買賣點評分")
+    st.markdown(t("### 📊 買賣點評分"))
     
-    with st.spinner("計算技術指標..."):
+    with st.spinner(t("計算技術指標...")):
         import yfinance as yf
         fmt = ticker + ".TW" if not ticker.endswith(".TW") else ticker
         raw = yf.download(fmt, period="1y", progress=False, auto_adjust=True)
@@ -172,38 +188,38 @@ def _render_stock_analysis_tab(cached_name, cached_price):
         
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("#### 📈 買點評分")
+            st.markdown(t("#### 📈 買點評分"))
             b1, b2 = st.columns([1, 2])
-            b1.metric("買點分數", f"{buy_total} / {buy_max}")
+            b1.metric(t("買點分數"), f"{buy_total} / {buy_max}")
             b2.markdown(f"**<span style='color:{buy_color}'>{buy_grade}</span>**", unsafe_allow_html=True)
             df_buy = pd.DataFrame(buy)
             df_buy["得分"] = df_buy.apply(lambda r: f"{r['得分']}/{r['滿分']}", axis=1)
-            st.dataframe(df_buy[["條件","結果","得分","說明"]], width="stretch", hide_index=True)
+            st.dataframe(t_cols(df_buy[["條件","結果","得分","說明"]]), width="stretch", hide_index=True)
         with c2:
-            st.markdown("#### 📤 賣點評分")
+            st.markdown(t("#### 📤 賣點評分"))
             s1, s2 = st.columns([1, 2])
-            s1.metric("賣點風險分", f"{sell_total} / {sell_max}")
+            s1.metric(t("賣點風險分"), f"{sell_total} / {sell_max}")
             s2.markdown(f"**<span style='color:{sell_color}'>{sell_grade}</span>**", unsafe_allow_html=True)
             df_sell = pd.DataFrame(sell)
             df_sell["風險分"] = df_sell.apply(lambda r: f"{r['風險分']}/{r['滿分']}", axis=1)
-            st.dataframe(df_sell[["條件","觸發","風險分","說明"]], width="stretch", hide_index=True)
-        st.info("⚠️ 評分只反映技術面，不代表未來必然漲跌。停損紀律永遠優先於評分。")
+            st.dataframe(t_cols(df_sell[["條件","觸發","風險分","說明"]]), width="stretch", hide_index=True)
+        st.info(t("⚠️ 評分只反映技術面，不代表未來必然漲跌。停損紀律永遠優先於評分。"))
     else:
-        st.warning("無法取得技術指標資料")
+        st.warning(t("無法取得技術指標資料"))
     
     # ═══════════════════════════════════════════════════════════
     # 2. 籌碼分析（法人 + 大戶）
     # ═══════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("### 💼 籌碼面分析")
+    st.markdown(t("### 💼 籌碼面分析"))
     
     # 閾值設定（直接顯示，不可摺疊）
-    st.markdown("##### ⚙️ 大戶/散戶閾值設定")
+    st.markdown(t("##### ⚙️ 大戶/散戶閾值設定"))
     col_w, col_r = st.columns(2)
     with col_w:
-        st.markdown("**大戶持股 ≥ X 張**")
+        st.markdown(t("**大戶持股 ≥ X 張**"))
         whale_thresh = st.radio(
-            "大戶閾值",
+            t("大戶閾值"),
             options=[400, 600, 800, 1000],
             index=0,
             key="whale_thresh_analysis",
@@ -211,33 +227,33 @@ def _render_stock_analysis_tab(cached_name, cached_price):
             horizontal=True
         )
     with col_r:
-        st.markdown("**散戶持股 ＜ Y 張**")
+        st.markdown(t("**散戶持股 ＜ Y 張**"))
         retail_thresh = st.radio(
-            "散戶閾值",
+            t("散戶閾值"),
             options=[10, 50, 100, 200, 400],
             index=0,
             key="retail_thresh_analysis",
             label_visibility="collapsed",
             horizontal=True
         )
-    st.caption(f"💡 當前設定：大戶 ≥ {whale_thresh} 張、散戶 < {retail_thresh} 張")
+    st.caption(t("💡 當前設定：大戶 ≥ {whale} 張、散戶 < {retail} 張", whale=whale_thresh, retail=retail_thresh))
     st.markdown("---")
     
     # 載入市場資料
-    with st.spinner("載入籌碼資料..."):
+    with st.spinner(t("載入籌碼資料...")):
         market_data, warns = _get_radar_data()
     
     # 查詢大戶籌碼
     has_whale_data = False
-    with st.spinner(f"⏳ 抓取 {ticker} 集保資料..."):
+    with st.spinner(t("⏳ 抓取 {ticker} 集保資料...", ticker=ticker)):
         try:
             df_t, err = get_tdcc_shareholding_with_history(ticker)
             if err:
-                st.error(f"❌ 查詢失敗：{err}")
+                st.error(t("❌ 查詢失敗：{err}", err=err))
                 market_data["whale"][ticker] = {"_error": err}
             elif df_t.empty:
-                st.warning(f"⚠️ 無 {ticker} 集保資料")
-                market_data["whale"][ticker] = {"_error": "無集保資料"}
+                st.warning(t("⚠️ 無 {ticker} 集保資料", ticker=ticker))
+                market_data["whale"][ticker] = {"_error": t("無集保資料")}
             else:
                 res = calc_holder_analysis(df_t)
                 if res:
@@ -261,10 +277,10 @@ def _render_stock_analysis_tab(cached_name, cached_price):
                     }
                     has_whale_data = True
                 else:
-                    st.error("❌ 分析失敗")
-                    market_data["whale"][ticker] = {"_error": "分析失敗"}
+                    st.error(t("❌ 分析失敗"))
+                    market_data["whale"][ticker] = {"_error": t("分析失敗")}
         except Exception as e:
-            st.error(f"❌ 查詢失敗：{str(e)}")
+            st.error(t("❌ 查詢失敗：{err}", err=str(e)))
             market_data["whale"][ticker] = {"_error": str(e)}
     
     # 渲染籌碼分析結果（HTML）- 根據是否有資料動態調整高度
@@ -280,226 +296,6 @@ def _render_chart_tab(cached_name, cached_price):
     if _chart_raw_ticker:
         st.caption(f"📌 {_chart_raw_ticker}　{cached_name(_chart_raw_ticker)}")
 
-
-
-def _render_water_level(cached_name, cached_price, user_id: str = "admin"):
-    from stock_data import get_market_risk_score, check_stock_signals, stress_test
-
-    st.header("💰 水位計算機")
-    st.caption("智慧計算建議持股水位 · 低位加碼 · 高位保護 · 汰弱留強")
-    st.caption("⚠️ 以下「建議」皆為程式依技術指標自動計算的結果，僅供個人研究參考，不構成投資建議。")
-
-    @st.cache_data(ttl=1800)
-    def _cached_risk():
-        return get_market_risk_score()
-
-    with st.spinner("計算市場震盪機率..."):
-        risk = _cached_risk()
-
-    osc_prob        = risk["oscillation_prob"]
-    osc_days        = risk["oscillation_days"]
-    suggested_ratio = risk["suggested_ratio"]
-    bd              = risk["breakdown"]
-
-    col_gauge, col_meta = st.columns([1, 2])
-    with col_gauge:
-        gauge  = STRATEGY["market_risk"]["gauge"]
-        gc     = "#ef5350" if osc_prob >= gauge["high"] else "#f39c12" if osc_prob >= gauge["mid"] else "#26a69a"
-        rlabel = "高風險"  if osc_prob >= gauge["high"] else "中風險"  if osc_prob >= gauge["mid"] else "低風險"
-        st.markdown(f"""
-        <div style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);
-            border:2px solid {gc};border-radius:16px;padding:24px 16px;text-align:center;box-shadow:0 0 20px {gc}44;">
-            <div style="font-size:13px;color:#aaa;margin-bottom:4px;">震盪機率</div>
-            <div style="font-size:52px;font-weight:900;color:{gc};line-height:1;">{osc_prob:.0f}<span style="font-size:24px">%</span></div>
-            <div style="font-size:14px;color:{gc};margin-top:6px;font-weight:bold;">{rlabel}</div>
-            <hr style="border-color:#333;margin:12px 0;">
-            <div style="display:flex;justify-content:space-around;">
-                <div><div style="font-size:11px;color:#888;">震盪倒數</div>
-                     <div style="font-size:22px;font-weight:bold;color:#fff;">{osc_days}<span style="font-size:12px;color:#888;"> 日</span></div></div>
-                <div><div style="font-size:11px;color:#888;">建議水位</div>
-                     <div style="font-size:22px;font-weight:bold;color:#FFD700;">{suggested_ratio:.0f}<span style="font-size:12px;color:#888;"> %</span></div></div>
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-    with col_meta:
-        st.markdown("##### 📡 指標明細")
-        if bd["rsi_val"] is not None:
-            w = STRATEGY["market_risk"]["weights"]
-            st.dataframe(pd.DataFrame([
-                {"指標":"0050 RSI(14)","數值":f"{bd['rsi_val']:.1f}","風險貢獻":f"{bd['rsi_score']:.0f}/100","權重":f"{w['rsi']:.0%}"},
-                {"指標":"季線乖離率","數值":f"{bd['bias_val']:+.1f}%","風險貢獻":f"{bd['bias_score']:.0f}/100","權重":f"{w['bias']:.0%}"},
-                {"指標":"20日年化波動率","數值":f"{bd['vol_val']:.1f}%","風險貢獻":f"{bd['vol_score']:.0f}/100","權重":f"{w['vol']:.0%}"},
-                {"指標":"VIX","數值":f"{bd['vix_val']:.1f}","風險貢獻":f"{bd['vix_score']:.0f}/100","權重":f"{w['vix']:.0%}"},
-            ]), width="stretch", hide_index=True)
-        if bd["market_label"]: st.info(f"大盤現況：**{bd['market_label']}**")
-        if risk["error"]:      st.warning(f"部分指標抓取失敗：{risk['error']}")
-
-    st.divider()
-    st.subheader("② 輸入你的資金狀況")
-    positions = get_open_positions(user_id)
-    auto_mv   = 0
-    pos_data  = []
-    for pos in positions:
-        (ticker, net_shares, total_cost, total_buy_shares, _, _, _, target_price, stop_loss, _) = pos
-        avg_cost = total_cost / total_buy_shares if total_buy_shares > 0 else 0
-        cur      = cached_price(ticker)
-        mval     = (cur * net_shares) if cur else (avg_cost * net_shares)
-        auto_mv += mval
-        pos_data.append({"ticker":ticker,"net_shares":net_shares,"avg_cost":avg_cost,"cur":cur,
-                          "market_val":mval,"stop_loss":stop_loss,"target_price":target_price})
-
-    col_i1, col_i2 = st.columns(2)
-    with col_i1:
-        stock_val = st.number_input("目前持股市值（元）", min_value=0, step=1000, value=int(auto_mv),
-                                     help="已自動從持倉總覽計算，也可手動修改")
-        if auto_mv > 0: st.caption(f"📌 系統自動計算：${auto_mv:,.0f}")
-    with col_i2:
-        cash_val = st.number_input("目前可動用閒錢（元）", min_value=0, step=10000, value=0)
-
-    total_asset = stock_val + cash_val
-    if total_asset <= 0:
-        st.warning("請輸入持股市值或閒錢金額")
-        return
-    current_ratio = (stock_val / total_asset * 100) if total_asset > 0 else 0
-
-    st.divider()
-    st.subheader("③ 水位分析")
-    suggested_val = total_asset * (suggested_ratio / 100)
-    diff_val      = suggested_val - stock_val
-    diff_ratio    = current_ratio - suggested_ratio
-
-    m1,m2,m3,m4 = st.columns(4)
-    m1.metric("總資產", f"${total_asset:,.0f}")
-    m2.metric("目前持股", f"${stock_val:,.0f}", delta=f"現況 {current_ratio:.1f}%", delta_color="off")
-    m3.metric("建議持股", f"${suggested_val:,.0f}", delta=f"目標 {suggested_ratio:.0f}%", delta_color="off")
-    if diff_val > 0:
-        m4.metric("水位差距", f"可加碼 ${diff_val:,.0f}", delta=f"低配 {abs(diff_ratio):.1f}%")
-        st.success(f"✅ 目前水位 **{current_ratio:.1f}%** 低於建議 **{suggested_ratio:.0f}%**，尚有 **${diff_val:,.0f}** 加碼空間")
-    else:
-        m4.metric("水位差距", f"超配 ${abs(diff_val):,.0f}", delta=f"超配 {abs(diff_ratio):.1f}%", delta_color="inverse")
-        st.error(f"⚠️ 目前水位 **{current_ratio:.1f}%** 高於建議 **{suggested_ratio:.0f}%**，需減碼約 **${abs(diff_val):,.0f}**")
-
-    st.divider()
-    st.subheader("④ 持股技術診斷儀表板")
-    if not positions:
-        st.info("目前無持倉")
-        return
-
-    with st.spinner("診斷中..."):
-        sig_results = []
-        for p in pos_data:
-            sig = check_stock_signals(p["ticker"], avg_cost=p["avg_cost"])
-            sig.update({"ticker":p["ticker"],"name":cached_name(p["ticker"]),
-                         "net_shares":p["net_shares"],"market_val":p["market_val"],
-                         "pnl_pct":((p["cur"]/p["avg_cost"]-1)*100 if p["cur"] and p["avg_cost"] else None)})
-            sig_results.append(sig)
-
-    for sig in sig_results:
-        raw      = sig.get("raw", {})
-        pnl_pct  = sig.get("pnl_pct")
-        pnl_color = "#ef5350" if (pnl_pct or 0) >= 0 else "#26a69a"
-        slope_up = raw.get("ma20_slope_up")
-        atr_stop = raw.get("atr_trail_stop")
-        rs5,rs10,rs60 = sig.get("rs_5"),sig.get("rs_10"),sig.get("rs_60")
-        k,d,r = sig.get("k_val"),sig.get("d_val"),sig.get("rsi_val")
-        obv   = sig.get("obv_slope")
-        s_html = ""
-        if slope_up is not None:
-            s_html = f"<span style='color:{'#26a69a' if slope_up else '#ef5350'};font-size:11px;font-weight:600'>EMA20 {'↑' if slope_up else '↓'}</span>"
-        with st.container(border=True):
-            r1c0,r1c1,r1c2,r1c3 = st.columns([3,2,2,2])
-            r1c0.markdown(f"<div style='font-size:16px;font-weight:700'>{sig['ticker']}　{sig['name']}</div>"
-                          f"<div style='font-size:22px;font-weight:800;color:{pnl_color}'>{fmt_pct(pnl_pct)}</div>",
-                          unsafe_allow_html=True)
-            for col, label, key in [(r1c1,"動能狀態","momentum"),(r1c2,"進場時機","timing"),(r1c3,"量價配合","volume")]:
-                col.markdown(f"<div style='font-size:11px;color:#888'>{label}</div>"
-                             f"<div style='font-size:20px'>{sig[f'{key}_emoji']} "
-                             f"<span style='font-size:14px;font-weight:600'>{sig[f'{key}_label']}</span></div>",
-                             unsafe_allow_html=True)
-            r2c0,r2c1,r2c2,r2c3 = st.columns([3,2,2,2])
-            dp = [f"市值 ${sig['market_val']:,.0f}"]
-            if atr_stop is not None: dp.append(f"ATR停利 {atr_stop:.2f}")
-            r2c0.markdown(f"<div style='font-size:11px;color:#aaa'>{'　'.join(dp)}</div><div>{s_html}</div>", unsafe_allow_html=True)
-            rs_p = []
-            if rs5  is not None: rs_p.append(f"5d {rs5:+.1f}%")
-            if rs10 is not None: rs_p.append(f"10d {rs10:+.1f}%")
-            if rs60 is not None: rs_p.append(f"60d {rs60:+.1f}%")
-            r2c1.caption("　".join(rs_p) if rs_p else "資料不足")
-            r2c2.caption(f"K {k:.0f}　D {d:.0f}　RSI {r:.0f}") if all(v is not None for v in [k,d,r]) else r2c2.caption("計算中")
-            r2c3.caption(f"OBV {'↑' if obv >= 0 else '↓'}　{abs(obv)/1e3:.0f}K") if obv is not None else r2c3.caption("計算中")
-
-    st.divider()
-    st.subheader("⑤ 加減碼建議")
-    buckets = {"trim": [], "entry": [], "hold": []}
-    for sig in sig_results:
-        kind, reasons = classify_rebalance(sig, diff_val)
-        buckets[kind].append((sig, reasons))
-    trim_list, entry_list, hold_list = buckets["trim"], buckets["entry"], buckets["hold"]
-
-    t_trim, t_entry, t_hold = st.tabs([f"🔴 建議減碼（{len(trim_list)}）", f"🟢 建議加碼（{len(entry_list)}）", f"🟡 續抱觀察（{len(hold_list)}）"])
-    with t_trim:
-        if not trim_list: st.success("目前無需減碼 👍")
-        else:
-            for sig, reasons in trim_list:
-                with st.container(border=True):
-                    c1,c2 = st.columns([1,2])
-                    c1.markdown(f"**{sig['ticker']} {sig['name']}**  \n現價 {fmt_price(sig['raw'].get('current_price') or 0)} | 損益 {fmt_pct(sig.get('pnl_pct'))}")
-                    c2.markdown("**減碼原因：** " + "　/　".join(reasons))
-    with t_entry:
-        if not entry_list: st.info("目前無同時滿足條件的加碼標的")
-        else:
-            for sig, reasons in entry_list:
-                with st.container(border=True):
-                    c1,c2 = st.columns([1,2])
-                    c1.markdown(f"**{sig['ticker']} {sig['name']}**  \n現價 {fmt_price(sig['raw'].get('current_price') or 0)} | 損益 {fmt_pct(sig.get('pnl_pct'))}")
-                    c2.markdown("**加碼原因：** " + "　/　".join(reasons))
-    with t_hold:
-        for sig, reasons in hold_list:
-            st.markdown(f"• **{sig['ticker']} {sig['name']}** — {' / '.join(reasons)}")
-
-    st.divider()
-    with st.expander("🧯 壓力測試（點擊展開）", expanded=False):
-        _pt_positions = get_open_positions(user_id)
-        if not _pt_positions:
-            st.info("先新增持倉才能做壓力測試")
-        else:
-            _pt_map = {f"{p[0]} {cached_name(p[0])}": p[0] for p in _pt_positions}
-            _pt_label = st.selectbox("選擇股票", list(_pt_map.keys()), key="stress_sel")
-            _pt_sel = _pt_map[_pt_label]
-            _pt_pos = next(p for p in _pt_positions if p[0] == _pt_sel)
-            _, _pt_net, _pt_cost, _pt_buy = _pt_pos[0], _pt_pos[1], _pt_pos[2], _pt_pos[3]
-            _pt_avg = _pt_cost / _pt_buy if _pt_buy > 0 else 0
-            st.info(f"**{_pt_label}**｜{_pt_net} 股｜均成本 {_pt_avg:.2f} 元｜總成本 {_pt_cost:,.0f} 元")
-            _drop_pct = st.slider("模擬跌幅", min_value=-50, max_value=-5, value=-20, step=5)
-            _r = stress_test(_pt_avg, _pt_net, _drop_pct)
-            _pc1,_pc2,_pc3 = st.columns(3)
-            _pc1.metric("目前市值", f"${_r['current_value']:,.0f}")
-            _pc2.metric("模擬虧損", f"${abs(_r['loss']):,.0f}", delta=f"{_drop_pct}%", delta_color="inverse")
-            _pc3.metric("跌後剩餘", f"${_r['new_value']:,.0f}")
-            st.divider()
-            _sc_rows = []
-            for _sname, _pct in [("2020 疫情崩盤",-30),("2022 升息熊市",-25),("2025/04 貿易戰",-20)]:
-                _rr = stress_test(_pt_avg, _pt_net, _pct)
-                _sc_rows.append({"情境":_sname,"跌幅":f"{_pct}%","帳面虧損":f"${abs(_rr['loss']):,.0f}","剩餘市值":f"${_rr['new_value']:,.0f}"})
-            st.dataframe(pd.DataFrame(_sc_rows), width="stretch", hide_index=True)
-            st.warning("💬 看到這個數字，你買之前真的想清楚了嗎？")
-
-    with st.expander("📖 指標算法說明（點擊展開）", expanded=False):
-        w, hc, sc = STRATEGY["market_risk"]["weights"], STRATEGY["health"], STRATEGY["signals"]
-        st.markdown(f"""
-**A. 動能狀態 — RS 相對強度矩陣**
-強力噴發：RS5>RS10>0 且 RS60>0　趨勢偏多：RS10>0　盤整/弱勢：RS10<0
-
-**B. 進場時機 — KD 隨機指標 + RSI**
-KD 9-3-3；黃金交叉=K↑穿越D；RSI>{sc['rsi_overheat']} 過熱；K<{hc['kd_oversold']} 超賣、K>{hc['kd_overbought']} 超買
-
-**C. 量價配合 — OBV 能量潮**
-價量齊揚：OBV 5日斜率>0　誘多背離：股價新高但OBV下降
-
-**D. 水位計算** — 0050 RSI×{w['rsi']:.0%} + 季線乖離×{w['bias']:.0%} + 20日波動率×{w['vol']:.0%} + VIX×{w['vix']:.0%}
-
-**E. ATR 停利參考價** = 近60日最高收盤 − {hc['atr_multiplier']}×ATR14
-        """)
 
 
 def _get_radar_data() -> tuple[dict, list[str]]:
@@ -551,11 +347,11 @@ def _get_radar_data() -> tuple[dict, list[str]]:
         try:
             tc, tch, err = _c_taiex(d)
             if not err and tc > 0:
-                if d != ep: warns.append(f"[指數] 使用 {d}")
+                if d != ep: warns.append(t("[指數] 使用 {d}", d=d))
                 break
-            if err: warns.append(f"[指數] {err}")
+            if err: warns.append(t("[指數] {err}", err=err))
         except Exception as e:
-            warns.append(f"[指數] {e}"); tc=tch=0
+            warns.append(t("[指數] {err}", err=e)); tc=tch=0
 
     # 個股行情
     frames = []
@@ -565,11 +361,11 @@ def _get_radar_data() -> tuple[dict, list[str]]:
                 df, err = fn(d)
                 if not err and not df.empty:
                     df["市場"] = label
-                    if d != ep: warns.append(f"[{label}] 使用 {d}")
+                    if d != ep: warns.append(t("[{label}] 使用 {d}", label=t(label), d=d))
                     frames.append(df); break
-                if err: warns.append(f"[{label}] {err}")
+                if err: warns.append(f"[{t(label)}] {err}")
             except Exception as e:
-                warns.append(f"[{label}] {e}")
+                warns.append(f"[{t(label)}] {e}")
     if frames:
         import pandas as _pd
         df_all = _pd.concat(frames, ignore_index=True)
@@ -581,9 +377,11 @@ def _get_radar_data() -> tuple[dict, list[str]]:
         dn = int((df_all["漲跌幅%"]<0).sum())
         if "成交金額" in df_all.columns:
             df_all["成交金額"] = _pd.to_numeric(df_all["成交金額"].astype(str).str.replace(",",""),errors="coerce").fillna(0)
-            vol_str = f"{df_all['成交金額'].sum()/1e8:.0f}億"
+            amt = df_all['成交金額'].sum()
+            vol_str = f"{amt/1e8:.0f}億" if get_lang() == "zh" else f"NT${amt/1e9:,.1f}B"
         else:
-            vol_str = f"{df_all['成交量'].sum()/1e4:.0f}億張"
+            vol = df_all['成交量'].sum()
+            vol_str = f"{vol/1e4:.0f}億張" if get_lang() == "zh" else f"{vol/1e4*100:,.0f}M lots"
         data["index"] = {"taiex":tc,"change":tch,"up":up,"down":dn,"vol":vol_str}
 
         if "類股" not in df_all.columns:
@@ -639,9 +437,9 @@ def _get_radar_data() -> tuple[dict, list[str]]:
         for d in [ec, _prev(ec)]:
             df_i2, ei2 = _c_inst(d)
             if not ei2 and not df_i2.empty:
-                if d != ec: warns.append(f"[法人] 使用 {d}")
+                if d != ec: warns.append(t("[法人] 使用 {d}", d=d))
                 df_i = df_i2; break
-            if ei2: warns.append(f"[法人] {ei2}")
+            if ei2: warns.append(t("[法人] {err}", err=ei2))
         if df_i is not None:
             for _,row in df_i.iterrows():
                 code = str(row.get("代號","")).strip()
@@ -662,12 +460,12 @@ def _get_radar_data() -> tuple[dict, list[str]]:
                 if h: data["inst_hist"][code] = h
             except: pass
     except Exception as e:
-        warns.append(f"[法人] {e}")
+        warns.append(t("[法人] {err}", err=e))
 
     # 漲停
     try:
         df_lu, elu = _c_lu(ep)
-        if elu: warns.append(f"[漲停] {elu}")
+        if elu: warns.append(t("[漲停] {err}", err=elu))
         elif not df_lu.empty:
             if "成交量" in df_lu.columns: df_lu = df_lu.sort_values("成交量",ascending=False)
             df_lu = df_lu.drop_duplicates(subset="代號",keep="first")
@@ -679,7 +477,7 @@ def _get_radar_data() -> tuple[dict, list[str]]:
                 for _,r in df_lu.iterrows()
             ]
     except Exception as e:
-        warns.append(f"[漲停] {e}")
+        warns.append(t("[漲停] {err}", err=e))
 
     st.session_state[cache_key] = (data, warns)
     return data, warns
@@ -697,7 +495,7 @@ def _render_html_section_with_height(market_data: dict, section: str, height: in
     if not html_path.exists():
         html_path = Path(__file__).parent / "market_radar_ui.html"
     if not html_path.exists():
-        st.error(f"❌ 找不到 market_radar_ui.html")
+        st.error(t("❌ 找不到 market_radar_ui.html"))
         return
     
     try:
@@ -723,12 +521,13 @@ window.MARKET_DATA = {data_json};
 window.RADAR_DEFAULT_PAGE = '{section}';
 window.WHALE_THRESH = {whale_thresh};
 window.RETAIL_THRESH = {retail_thresh};
+window.LANG = '{get_lang()}';
 </script>"""
         html_out = html_code.replace("<script>\n'use strict';", inject + "\n<script>\n'use strict';", 1)
         st.iframe(html_out, height=height)
     except Exception as e:
-        st.error(f"❌ HTML 渲染失敗：{str(e)}")
-        with st.expander("🔍 查看錯誤詳情"):
+        st.error(t("❌ HTML 渲染失敗：{err}", err=str(e)))
+        with st.expander(t("🔍 查看錯誤詳情")):
             import traceback
             st.code(traceback.format_exc())
 
@@ -737,16 +536,16 @@ def _render_sidebar_controls():
     """Sidebar 日期選擇 + 清快取，三個 tab 共用。"""
     with st.sidebar:
         st.markdown("---")
-        st.markdown("### 📡 類股熱點")
+        st.markdown(t("### 📡 類股熱點"))
         default_d = _price_date()
-        td = st.date_input("查詢日期", value=datetime.strptime(default_d,"%Y-%m-%d").date(), key="radar_trade_date").strftime("%Y-%m-%d")
+        td = st.date_input(t("查詢日期"), value=datetime.strptime(default_d,"%Y-%m-%d").date(), key="radar_trade_date").strftime("%Y-%m-%d")
         st.session_state["radar_trade_date_str"] = td
         try:
             if not _is_trading_day(datetime.strptime(default_d,"%Y-%m-%d")):
                 p = _prev_trading_day(datetime.strptime(default_d,"%Y-%m-%d")).strftime("%Y-%m-%d")
-                st.caption(f"🗓️ 休市日，顯示 {p}")
+                st.caption(t("🗓️ 休市日，顯示 {date}", date=p))
         except: pass
-        if st.button("🗑️ 清除快取", width="stretch", key="radar_clear"):
+        if st.button(t("🗑️ 清除快取"), width="stretch", key="radar_clear"):
             clear_all_cache()
             # st.cache_data.clear()
             for k in list(st.session_state.keys()):
@@ -756,19 +555,19 @@ def _render_sidebar_controls():
 
 def _render_sector_tab():
     _render_sidebar_controls()
-    with st.spinner("載入市場資料..."):
+    with st.spinner(t("載入市場資料...")):
         market_data, warns = _get_radar_data()
     if warns:
-        with st.sidebar.expander(f"⚠️ {len(warns)} 則警告"):
+        with st.sidebar.expander(t("⚠️ {n} 則警告", n=len(warns))):
             for w in warns: st.caption(w)
     idx = market_data.get("index", {})
     if idx:
         c1,c2,c3,c4 = st.columns(4)
         sign = "+" if idx.get("change",0)>=0 else ""
-        c1.metric("加權指數", f"{idx.get('taiex',0):,.0f}", f"{sign}{idx.get('change',0):.2f}%")
-        c2.metric("上漲", idx.get("up","—"))
-        c3.metric("下跌", idx.get("down","—"))
-        c4.metric("成交量", idx.get("vol","—"))
+        c1.metric(t("加權指數"), f"{idx.get('taiex',0):,.0f}", f"{sign}{idx.get('change',0):.2f}%")
+        c2.metric(t("上漲"), idx.get("up","—"))
+        c3.metric(t("下跌"), idx.get("down","—"))
+        c4.metric(t("成交量"), idx.get("vol","—"))
     _render_html_section(market_data, "sector")
 
 
@@ -781,11 +580,11 @@ def _render_market_scan_tab():
     """
     _render_sidebar_controls()
     
-    with st.spinner("載入市場資料..."):
+    with st.spinner(t("載入市場資料...")):
         market_data, warns = _get_radar_data()
     
     if warns:
-        with st.sidebar.expander(f"⚠️ {len(warns)} 則警告"):
+        with st.sidebar.expander(t("⚠️ {n} 則警告", n=len(warns))):
             for w in warns: st.caption(w)
     
     # ═══════════════════════════════════════════════════════════
@@ -795,10 +594,10 @@ def _render_market_scan_tab():
     if idx:
         c1, c2, c3, c4 = st.columns(4)
         sign = "+" if idx.get("change", 0) >= 0 else ""
-        c1.metric("加權指數", f"{idx.get('taiex', 0):,.0f}", f"{sign}{idx.get('change', 0):.2f}%")
-        c2.metric("上漲", idx.get("up", "—"))
-        c3.metric("下跌", idx.get("down", "—"))
-        c4.metric("成交量", idx.get("vol", "—"))
+        c1.metric(t("加權指數"), f"{idx.get('taiex', 0):,.0f}", f"{sign}{idx.get('change', 0):.2f}%")
+        c2.metric(t("上漲"), idx.get("up", "—"))
+        c3.metric(t("下跌"), idx.get("down", "—"))
+        c4.metric(t("成交量"), idx.get("vol", "—"))
     
     # ═══════════════════════════════════════════════════════════
     # 2. 類股熱度
@@ -810,19 +609,19 @@ def _render_market_scan_tab():
     # ═══════════════════════════════════════════════════════════
     # 3. 今日焦點（radio 切換，用 HTML 渲染）
     # ═══════════════════════════════════════════════════════════
-    st.markdown("### 📊 今日焦點")
+    st.markdown(t("### 📊 今日焦點"))
     
     focus_type = st.radio(
-        "選擇焦點類型",
-        options=["漲停股", "法人買賣超"],
+        t("選擇焦點類型"),
+        options=[t("漲停股"), t("法人買賣超")],
         horizontal=True,
         label_visibility="collapsed",
-        key="market_scan_focus"
+        key=f"market_scan_focus_{get_lang()}"   # 換語言時選項文字會變，換 key 避免舊值對不上
     )
     
-    if focus_type == "漲停股":
+    if focus_type == t("漲停股"):
         # 渲染漲停分析（HTML）
         _render_html_section_with_height(market_data, "limitup", height=1500)
-    elif focus_type == "法人買賣超":
+    elif focus_type == t("法人買賣超"):
         # 渲染法人買賣超表格（HTML）
         _render_html_section_with_height(market_data, "inst-ranking", height=1200)

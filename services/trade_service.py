@@ -5,6 +5,9 @@ services/trade_service.py
 
 `fetch_bench_price` 用參數注入（預設是真的打 yfinance 的 get_price_on_date），
 測試時可以換成假函式，不必真的連網路。
+
+資料庫存的方向 / 買賣理由 / 大盤位階一律是中文；CSV 匯入時也接受這些值的英文翻譯
+（例如 Buy / Sell），會自動轉回中文再存。
 """
 from __future__ import annotations
 
@@ -13,11 +16,45 @@ import re
 import pandas as pd
 
 import database
+from i18n import EN, t
 from stock_data import calc_forward_pe, get_price_on_date
 
 REQUIRED_CSV_COLUMNS = {"date", "ticker", "direction", "price", "shares"}
 VALID_DIRECTIONS = {"買入", "賣出"}
 NUMERIC_CSV_COLUMNS = ["price", "stop_loss", "target_price", "estimated_eps"]
+
+# 資料庫存的固定選項（中文），畫面顯示時再翻譯
+MARKET_CONDITION_OPTIONS = ["高位（接近52週高點）", "中位（正常區間）", "低位（回調整理）", "恐慌（大跌中）"]
+BUY_REASON_OPTIONS = ["技術面突破", "基本面看好", "法人買超", "定期定額", "看新聞/聽消息", "其他"]
+SELL_REASON_OPTIONS = [
+    "停損觸發（原始防線失守）",
+    "達標獲利（到目標價）",
+    "邏輯消失（買進理由不再成立）",
+    "換股操作（找到更好的標的）",
+    "其他",
+]
+
+
+def _aliases(values) -> dict[str, str]:
+    """{英文翻譯或中文原值（小寫）: 中文原值}，用來把 CSV 裡的英文值轉回中文。"""
+    out = {}
+    for v in values:
+        out[v.lower()] = v
+        out[EN.get(v, v).strip().lower()] = v
+    return out
+
+
+_DIRECTION_ALIASES = _aliases(VALID_DIRECTIONS)
+_REASON_ALIASES = _aliases(BUY_REASON_OPTIONS)
+_EXIT_REASON_ALIASES = _aliases(SELL_REASON_OPTIONS)
+
+
+def _to_canonical(series: pd.Series, aliases: dict[str, str]) -> pd.Series:
+    def conv(v):
+        if isinstance(v, str):
+            return aliases.get(v.strip().lower(), v.strip())
+        return v
+    return series.map(conv)
 
 
 def is_valid_ticker(ticker: str) -> bool:
@@ -28,11 +65,11 @@ def validate_manual_trade(ticker: str, price: float, shares: int) -> list[str]:
     """回傳錯誤訊息列表，空 list 代表驗證通過。"""
     errors = []
     if not ticker or not str(ticker).strip():
-        errors.append("請輸入股票代號")
+        errors.append(t("請輸入股票代號"))
     if price is None or price <= 0:
-        errors.append("請輸入成交價格")
+        errors.append(t("請輸入成交價格"))
     if shares is None or shares <= 0:
-        errors.append("請輸入股數")
+        errors.append(t("請輸入股數"))
     return errors
 
 
@@ -83,6 +120,12 @@ def normalize_csv_trades(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     df["date"] = pd.to_datetime(df["date"].astype(str), errors="coerce").dt.strftime("%Y-%m-%d")
     df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
+    # 英文的方向 / 理由（Buy、Sell、Target reached…）轉回資料庫用的中文
+    df["direction"] = _to_canonical(df["direction"], _DIRECTION_ALIASES)
+    if "reason" in df.columns:
+        df["reason"] = _to_canonical(df["reason"], _REASON_ALIASES)
+    if "exit_reason" in df.columns:
+        df["exit_reason"] = _to_canonical(df["exit_reason"], _EXIT_REASON_ALIASES)
     return df
 
 
@@ -91,7 +134,7 @@ def validate_csv_rows(df: pd.DataFrame) -> dict:
     驗證上傳的交易 CSV。回傳：
       missing_cols   缺少的必要欄位（set，非空代表整份 CSV 不能用）
       clean          清理過的 DataFrame（missing_cols 非空時為 None）
-      bad_direction  direction 不是「買入」/「賣出」的列
+      bad_direction  direction 不是「買入」/「賣出」（或 Buy / Sell）的列
       bad_ticker     代號格式看起來有誤的列（僅警告，不阻擋匯入）
       bad_price      price 是空值或 <=0 的列
     """

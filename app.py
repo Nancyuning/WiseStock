@@ -28,6 +28,7 @@ Path("data").mkdir(exist_ok=True)
 # ── DB 初始化 ─────────────────────────────────────────────
 from auth import init_auth_db, verify_password, update_last_login, reset_password as auth_reset_password
 from demo import demo_enabled, demo_user, is_demo, ensure_demo_trades
+from i18n import t, get_lang, render_language_picker
 init_auth_db()
 
 from database import init_db
@@ -37,7 +38,7 @@ from market_radar_db import init_db as radar_init_db
 radar_init_db()
 
 # ── 頁面基本設定 ──────────────────────────────────────────
-st.set_page_config(page_title="台股追蹤平台", page_icon="📈", layout="wide")
+st.set_page_config(page_title="WiseStock", page_icon="📈", layout="wide")
 
 # ── 全域 CSS ──────────────────────────────────────────────
 st.markdown("""
@@ -57,16 +58,16 @@ button[data-baseweb="tab"] p { font-size: 16px !important; font-weight: 500; }
 # 登入頁
 # ══════════════════════════════════════════════════════════
 def _render_login():
-    st.title("📈 台股追蹤平台")
-    st.caption("請先登入")
+    st.title(t("WiseStock"))
+    st.caption(t("請先登入"))
     st.divider()
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         with st.form("login_form"):
-            username = st.text_input("帳號")
-            password = st.text_input("密碼", type="password")
-            submitted = st.form_submit_button("登入", width="stretch", type="primary")
+            username = st.text_input(t("帳號"))
+            password = st.text_input(t("密碼"), type="password")
+            submitted = st.form_submit_button(t("登入"), width="stretch", type="primary")
 
         if submitted:
             user = verify_password(username, password)
@@ -75,17 +76,19 @@ def _render_login():
                 st.session_state["user"] = user
                 st.rerun()
             else:
-                st.error("帳號或密碼錯誤，或帳號已停用")
+                st.error(t("帳號或密碼錯誤，或帳號已停用"))
 
         if demo_enabled():
-            st.markdown("<div style='text-align:center;color:#888;margin:8px 0'>或</div>",
+            st.markdown(f"<div style='text-align:center;color:#888;margin:8px 0'>{t('或')}</div>",
                         unsafe_allow_html=True)
-            if st.button("👀 以訪客身分瀏覽 Demo", width="stretch"):
+            if st.button(t("👀 以訪客身分瀏覽 Demo"), width="stretch"):
                 ensure_demo_trades()
                 st.session_state["user"] = demo_user()
                 st.rerun()
-            st.caption("Demo 使用虛構的交易紀錄，所有修改功能皆已停用。")
+            st.caption(t("Demo 使用虛構的交易紀錄，所有修改功能皆已停用。"))
 
+
+render_language_picker()
 
 if "user" not in st.session_state:
     _render_login()
@@ -100,8 +103,8 @@ if "v2_cache_cleared" not in st.session_state:
     st.cache_data.clear()
     st.session_state.v2_cache_cleared = True
 
-st.title("📈 台股追蹤平台")
-st.caption("v2.0　監控 · 研究 · 紀錄 · 回顧")
+st.title(t("WiseStock"))
+st.caption(t("v2.0 打造個人股票紀錄平台"))
 
 # ── 導覽列 ────────────────────────────────────────────────
 pages = ["監控中心", "市場研究", "紀錄維護", "績效回顧"]
@@ -110,55 +113,62 @@ if user["role"] == "admin":
     pages.append("帳號管理")
     icons.append("people-fill")
 
-selected_main = option_menu(
+# pages 是內部路由用的中文 key，畫面顯示翻譯後的 label
+page_labels = [t(p) for p in pages]
+current_page = st.session_state.get("_page", pages[0])
+selected_label = option_menu(
     menu_title=None,
-    options=pages,
+    options=page_labels,
     icons=icons,
     orientation="horizontal",
+    default_index=pages.index(current_page) if current_page in pages else 0,
+    key=f"main_menu_{get_lang()}",   # 換語言時 label 會變，換 key 讓元件重建
     styles={
         "container": {"padding": "0!important", "background-color": "transparent"},
         "nav-link":  {"font-size": "16px", "text-align": "center"},
     }
 )
+selected_main = pages[page_labels.index(selected_label)] if selected_label in page_labels else pages[0]
+st.session_state["_page"] = selected_main
 
 # ── Sidebar ───────────────────────────────────────────────
 with st.sidebar:
-    st.markdown(f"**{user['display_name']}**")
-    st.caption({"admin": "管理員", "demo": "Demo 訪客（唯讀）"}.get(user["role"], "一般用戶"))
+    st.markdown(f"**{t(user['display_name']) if readonly else user['display_name']}**")
+    st.caption(t({"admin": "管理員", "demo": "Demo 訪客（唯讀）"}.get(user["role"], "一般用戶")))
 
-    if st.button("登出", width="stretch"):
+    if st.button(t("登出"), width="stretch"):
         del st.session_state["user"]
         st.rerun()
 
     if not readonly:
         st.divider()
-        st.header("修改密碼")
+        st.header(t("修改密碼"))
         with st.form("change_pwd_form"):
-            old_pwd  = st.text_input("目前密碼", type="password")
-            new_pwd  = st.text_input("新密碼（至少 6 字元）", type="password")
-            new_pwd2 = st.text_input("確認新密碼", type="password")
-            pwd_btn  = st.form_submit_button("更新密碼", width="stretch")
+            old_pwd  = st.text_input(t("目前密碼"), type="password")
+            new_pwd  = st.text_input(t("新密碼（至少 6 字元）"), type="password")
+            new_pwd2 = st.text_input(t("確認新密碼"), type="password")
+            pwd_btn  = st.form_submit_button(t("更新密碼"), width="stretch")
         if pwd_btn:
             from auth import verify_password as _vp
             if not _vp(user_id, old_pwd):
-                st.sidebar.error("目前密碼錯誤")
+                st.sidebar.error(t("目前密碼錯誤"))
             elif len(new_pwd) < 6:
-                st.sidebar.error("新密碼至少 6 個字元")
+                st.sidebar.error(t("新密碼至少 6 個字元"))
             elif new_pwd != new_pwd2:
-                st.sidebar.error("兩次密碼不一致")
+                st.sidebar.error(t("兩次密碼不一致"))
             else:
                 auth_reset_password(user_id, new_pwd)
-                st.sidebar.success("密碼已更新")
+                st.sidebar.success(t("密碼已更新"))
 
     st.divider()
-    st.header("🛠️ 系統管理")
-    if st.button("🗑️ 清除快取", help="清除所有股票名稱、價格等快取資料"):
+    st.header(t("🛠️ 系統管理"))
+    if st.button(t("🗑️ 清除快取"), help=t("清除所有股票名稱、價格等快取資料")):
         st.cache_data.clear()
-        st.success("✅ 快取已清除！")
+        st.success(t("✅ 快取已清除！"))
         st.rerun()
 
     st.divider()
-    st.caption("本工具僅供個人交易紀錄與研究使用，所有數據與指標不構成任何投資建議，投資盈虧請自行負責。")
+    st.caption(t("本工具僅供個人交易紀錄與研究使用，所有數據與指標不構成任何投資建議，投資盈虧請自行負責。"))
 
 # ══════════════════════════════════════════════════════════
 # 共用快取函式
@@ -166,8 +176,7 @@ with st.sidebar:
 from stock_data import (
     get_current_price, get_relative_strength, get_price_history,
     get_stock_name, get_market_level, get_price_on_date,
-    get_price_after_sell, stress_test, calc_forward_pe,
-    check_stock_health, get_market_risk_score, check_stock_signals,
+    get_price_after_sell,
 )
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -176,13 +185,13 @@ def cached_name(ticker):
     return get_stock_name(ticker)
 
 @st.cache_data(ttl=300)
-def cached_price(t):   return get_current_price(t)
+def cached_price(ticker):  return get_current_price(ticker)
 
 @st.cache_data(ttl=300)
-def cached_rs(t):      return get_relative_strength(t)
+def cached_rs(ticker):     return get_relative_strength(ticker)
 
 @st.cache_data(ttl=300)
-def cached_hist(t):    return get_price_history(t)
+def cached_hist(ticker):   return get_price_history(ticker)
 
 @st.cache_data(ttl=3600)
 def cached_market(d=None): return get_market_level(d)
